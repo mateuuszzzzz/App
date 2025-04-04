@@ -10,35 +10,31 @@ on:
 jobs:
   prepare-build-metadata:
     runs-on: ubuntu-latest
-    outputs:
-      REACT_NATIVE_ERSION: ${{ steps.getVersion.outputs.VERSION }}
-      PATCHES_HASH: ${{ steps.savePatchesHash.outputs.PATCHES_HASH }}
-      COMMIT_HASH: ${{ steps.saveCommitHash.outputs.COMMIT_HASH }}
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.inputs.PULL_REQUEST_NUMBER }}/head
 
-      - name: Checkout on PR branch and save commit hash
+      - name: Save commit hash
         id: saveCommitHash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PR_NUMBER=${{ github.event.inputs.PULL_REQUEST_NUMBER }}
-          gh pr checkout "${PR_NUMBER}"
           COMMIT_HASH=$(git rev-parse HEAD)
-          echo "COMMIT_HASH=$COMMIT_HASH" >> "$GITHUB_OUTPUT"
+          echo "COMMIT_HASH=$COMMIT_HASH" >> "$GITHUB_ENV"
 
       - name: Setup Node
         uses: ./.github/actions/composite/setupNode
 
       - name: Install dependencies and apply patches
-        run: npm i-standalone
+        run: npm run i-standalone
 
       - name: Get react-native version
         id: getVersion
         run: |
           VERSION=$(jq -r '.dependencies["react-native"]' package.json)
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Save patches hash
         id: savePatchesHash
@@ -48,11 +44,48 @@ jobs:
             echo "Files being considered for hash calculation:"
             find patches -type f -name "react-native+${VERSION}*.patch" -exec echo {} \;
             HASH=$(find patches -type f -name "react-native+${VERSION}*.patch" -exec sha256sum {} + | sort | sha256sum | awk '{print $1}')
-            echo "PATCHES_HASH=$HASH" >> "$GITHUB_OUTPUT"
+            echo "PATCHES_HASH=$HASH" >> "$GITHUB_ENV"
           fi
+      - name: Determine React Native version used for patched release and increment patch iteration
+        id: determineNewVersion
+        run: |
+          VERSION="${{ env.VERSION }}"
 
-      - name: Save patched react-native module
-        uses: actions/upload-artifact@v4
-        with:
-          name: react-native-module
-          path: node_modules/react-native/
+          FILTERED_MAVEN_VERSIONS=$(curl -s -H "Authorization: Bearer ${{ github.token }}" \
+          "https://maven.pkg.github.com/mateuuszzzzz/App/com/example/react/react-android/maven-metadata.xml" | \
+          grep -o "<version>${VERSION}-[0-9]\+</version>" | \
+          grep -o "${VERSION}-[0-9]" | \
+          sort -t'-' -k2 -n)
+
+          LATEST_CUSTOM_VERSION=$(echo "$FILTERED_MAVEN_VERSIONS" | tail -n1)
+
+          if [ -n "$LATEST_CUSTOM_VERSION" ]; then
+            PATCH_ITERATION=$(echo $LATEST_CUSTOM_VERSION | sed 's/^.*-//')
+            INCREMENTED_PATCH_ITERATION=$((PATCH_ITERATION + 1))
+            NEW_VERSION="${VERSION}-${INCREMENTED_PATCH_ITERATION}"
+
+            echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+            echo "Found latest custom version: $LATEST_CUSTOM_VERSION. Incrementing to $NEW_VERSION"
+          else
+            echo "No existing custom versions found for $VERSION. Starting from 0"
+            echo "NEW_VERSION=$VERSION-0" >> $GITHUB_ENV
+          fi
+      - name: Build and publish artifacts
+        env:
+          GH_PUBLISH_ACTOR: ${{ github.actor }}
+          GH_PUBLISH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RN_VERSION: ${{ env.NEW_VERSION }}
+          PATCHES_HASH: ${{ env.PATCHES_HASH }}
+          COMMIT_HASH: ${{ env.COMMIT_HASH }}
+          PULL_REQUEST_NUMBER: ${{ github.event.inputs.PULL_REQUEST_NUMBER }}
+        run: |
+          export ORG_GRADLE_PROJECT_reactNativeArchitectures="arm64-v8a"
+
+          echo "Starting build and publication process for ${{ env.NEW_VERSION }}"
+          echo "PR Number: ${{ github.event.inputs.PULL_REQUEST_NUMBER }}"
+          echo "Commit Hash: ${{ env.COMMIT_HASH }}"
+          echo "Patches Hash: ${{ env.PATCHES_HASH }}"
+
+          cd android
+          ./gradlew buildReactNativeArtifacts -x lint -x test -x check
+          ./gradlew publishReactNativeArtifacts
