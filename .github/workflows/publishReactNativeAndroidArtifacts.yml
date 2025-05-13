@@ -129,10 +129,3 @@ jobs:
           IS_HYBRID_BUILD: ${{ matrix.is_hybrid }}
           PATCHED_VERSION: ${{ steps.getNewPatchedVersion.outputs.NEW_PATCHED_VERSION }}
           PATCHES_HASH: ${{ steps.getNewPatchesHash.outputs.HASH }}
-
-      - name: Announce failed workflow in Slack
-        if: ${{ failure() }}
-        uses: ./.github/actions/composite/announceFailedWorkflowInSlack
-        with:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          CHANNEL: '#expensify-open-source'
