@@ -1,0 +1,448 @@
+diff --git a/.claude/agents/code-inline-reviewer.md b/.claude/agents/code-inline-reviewer.md
+index 39a8e15b8c6..7c09e7a421b 100644
+--- a/.claude/agents/code-inline-reviewer.md
++++ b/.claude/agents/code-inline-reviewer.md
+@@ -2,7 +2,7 @@
+ 
+ name: code-inline-reviewer
+ description: Reviews code and creates inline comments for specific rule violations.
+-tools: Glob, Grep, Read, TodoWrite, Bash, BashOutput, KillBash, mcp__github_inline_comment__create_inline_comment
++tools: Glob, Grep, Read, TodoWrite, Bash, BashOutput, KillBash
+ model: inherit
+ ---
+ 
+@@ -145,29 +145,91 @@ const [personalDetails] = useOnyx(ONYXKEYS.PERSONAL_DETAILS_LIST);
+ 
+ ### [PERF-4] Memoize objects and functions passed as props
+ 
+-- **Search patterns**: `useMemo`, `useCallback`, and prop passing patterns
++- **Search patterns**: Look for objects/functions passed as props:
++  - Inline objects: `prop={{`, `={{`
++  - Inline arrow functions: `prop={() =>`, `onPress={() =>`, `onCallback={() =>`
++  - Hooks returning objects: `return {` inside custom hooks (files starting with `use`)
++  - Object variables passed as props: `prop={someObject}` where `someObject` is not memoized
+ 
+-- **Condition**: Objects and functions passed as props should be properly memoized or simplified to primitive values to prevent unnecessary re-renders.
+-- **Reasoning**: React uses referential equality to determine if props changed. New object/function instances on every render trigger unnecessary re-renders of child components, even when the actual data hasn't changed. Memoization preserves referential stability.
++- **Condition**: Flag ONLY when ALL of these are true:
+ 
+-Good:
++  1. An object literal, arrow function, or non-memoized variable is passed as a prop to a child component
++  2. The child component IS memoized (either via `React.memo`/`memo()` OR React Compiler optimized)
++  3. The parent component is NOT optimized by React Compiler
+ 
+-```tsx
+-const reportData = useMemo(() => ({
+-    reportID: report.reportID,
+-    type: report.type,
+-    isPinned: report.isPinned,
+-}), [report.reportID, report.type, report.isPinned]);
++  **DO NOT flag if:**
++
++  - Child component is NOT memoized (it re-renders anyway, memoizing props won't help)
++  - Parent component IS optimized by React Compiler (compiler auto-memoizes)
++  - Props are primitives (strings, numbers, booleans)
++  - The object/function is already wrapped in `useMemo`/`useCallback`
++
++- **Reasoning**: React uses referential equality to determine if props changed. New object/function instances break memoization of child components. However, memoizing props only matters when the child is memoized AND the parent is not handled by React Compiler.
++
++#### MANDATORY: Check React Compiler optimization status
+ 
+-return <ReportActionItem report={reportData} />
++Before flagging or skipping PERF-4, you MUST run:
++
++```bash
++checkReactCompilerOptimization.sh <file-path>
+ ```
+ 
+-Bad:
++This returns optimization status for the parent and imported children:
++
++```json
++{
++  "ParentComponent": {
++    "optimized": true,
++    "path": "/path/to/ParentComponent.tsx"
++  },
++  "ChildButton": {
++    "optimized": false,
++    "path": "/path/to/ChildButton.tsx"
++  }
++}
++```
++
++Then check if non-optimized children use `memo()`:
++```bash
++grep -E "memo\(|React\.memo" <child-path>
++```
+ 
++#### Decision flow
++
++1. **Is child memoized?**
++   - `"optimized": true` → Yes (React Compiler) → go to step 2
++   - `"optimized": false` → Check manually: `grep -E "memo\(|React\.memo" <path>`
++     - Found `memo(` → Yes (manual) → go to step 2
++     - Not found → **Skip PERF-4** (child re-renders anyway)
++
++2. **Is parent optimized by React Compiler?**
++   - `"optimized": true` → **Skip PERF-4** (compiler auto-memoizes)
++   - `"optimized": false` → **Flag PERF-4** (must memoize manually)
++
++#### Examples
++
++**Flag this** (parent NOT compiled, child IS memoized):
+ ```tsx
+-const [report] = useOnyx(`ONYXKEYS.COLLECTION.REPORT${iouReport.id}`);
++// ❌ New object every render breaks MemoizedList's memoization
++const options = { showHeader: true, pageSize: 10 };
++return <MemoizedList options={options} />;
+ 
+-return <ReportActionItem report={report} />
++// ❌ Inline callback breaks MemoizedButton's memoization
++return <MemoizedButton onPress={() => handlePress(id)} />;
++```
++
++**Do NOT flag** (parent IS compiled by React Compiler):
++```tsx
++// ✅ React Compiler auto-memoizes - no manual useMemo/useCallback needed
++const options = { showHeader: true, pageSize: 10 };
++return <MemoizedList options={options} />;
++```
++
++**Do NOT flag** (child is NOT memoized):
++```tsx
++// ✅ RegularList is not memoized, so it re-renders anyway
++const options = { showHeader: true, pageSize: 10 };
++return <RegularList options={options} />;
+ ```
+ 
+ ---
+@@ -203,6 +265,7 @@ memo(ReportActionItem, (prevProps, nextProps) =>
+ 1. **First, get the list of changed files and their diffs:**
+    - Use `gh pr diff` to see what actually changed in the PR
+    - Focus ONLY on the changed lines, not the entire file
++   - **CRITICAL**: Only create inline comments on lines that are part of the diff. Do NOT add comments to lines outside the diff, even if they contain violations. Comments on unchanged lines will fail to be created.
+ 2. **For analyzing changed files:**
+    - **For large files (>5000 lines):** Use the Grep tool to search for specific violation patterns instead of reading the entire file. Focus grep searches on the changed portions shown in the diff.
+    - **For smaller files:** You may read the full file using the Read tool
+@@ -214,7 +277,7 @@ memo(ReportActionItem, (prevProps, nextProps) =>
+    - `line`: Line number where the issue occurs
+    - `body`: Concise and actionable description of the violation and fix, following the below Comment Format
+ 6. **Each comment must reference exactly one Rule ID.**
+-7. **Output must consist exclusively of calls to mcp__github_inline_comment__create_inline_comment in the required format.** No other text, Markdown, or prose is allowed.
++7. **Output must consist exclusively of calls to createInlineComment.sh in the required format.** No other text, Markdown, or prose is allowed.
+ 8. **If no violations are found, add a reaction to the PR**:
+    Add a 👍 (+1) reaction to the PR using the `addPrReaction` script (available in PATH from `.claude/scripts/`). The script takes ONLY the PR number as argument - it always adds a "+1" reaction, so do NOT pass any reaction type or emoji.
+ 9. **Add reaction if and only if**:
+@@ -230,15 +293,13 @@ memo(ReportActionItem, (prevProps, nextProps) =>
+ 
+ ## Tool Usage Example
+ 
+-For each violation, call the mcp__github_inline_comment__create_inline_comment tool like this.
+-CRITICAL: **DO NOT** use the Bash tool for inline comments:
++For each violation, call the createInlineComment.sh script like this:
+ 
++```bash
++createInlineComment.sh 'src/components/ReportActionsList.tsx' '<Body of the comment according to the Comment Format>' 128
+ ```
+-mcp__github_inline_comment__create_inline_comment:
+-  path: 'src/components/ReportActionsList.tsx'
+-  line: 128
+-  body: '<Body of the comment according to the Comment Format>'
+-```
++
++**IMPORTANT**: Always use single quotes around the body argument to properly handle special characters and quotes.
+ 
+ If ZERO violations are found, use the Bash tool to add a reaction to the PR body:
+ 
+@@ -258,4 +319,4 @@ addPrReaction.sh <PR_NUMBER>
+ <Suggested, specific fix preferably with a code snippet>
+ ```
+ 
+-**CRITICAL**: You must actually call the mcp__github_inline_comment__create_inline_comment tool for each violation. Don't just describe what you found - create the actual inline comments!
++**CRITICAL**: You must actually call the createInlineComment.sh script for each violation. Don't just describe what you found - create the actual inline comments!
+diff --git a/.claude/commands/review-code-pr.md b/.claude/commands/review-code-pr.md
+index 108403ca8c5..3dc0d7b610a 100644
+--- a/.claude/commands/review-code-pr.md
++++ b/.claude/commands/review-code-pr.md
+@@ -1,5 +1,5 @@
+ ---
+-allowed-tools: Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(addPrReaction.sh:*),mcp__github_inline_comment__create_inline_comment
++allowed-tools: Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(addPrReaction.sh:*),Bash(createInlineComment.sh:*),Bash(checkReactCompilerOptimization.sh:*)
+ description: Review a code contribution pull request
+ ---
+ 
+diff --git a/.claude/scripts/addPrReaction.sh b/.claude/scripts/addPrReaction.sh
+index 96cde0d4c00..39bbb0f3f5e 100755
+--- a/.claude/scripts/addPrReaction.sh
++++ b/.claude/scripts/addPrReaction.sh
+@@ -8,8 +8,8 @@ if [[ $# -lt 1 ]] || ! [[ "$1" =~ ^[0-9]+$ ]]; then
+     exit 1
+ fi
+ 
+-PR_NUMBER="$1"
+-REPO="${GITHUB_REPOSITORY}"
++readonly PR_NUMBER="$1"
++readonly REPO="${GITHUB_REPOSITORY}"
+ 
+ gh api -X POST "/repos/$REPO/issues/$PR_NUMBER/reactions" -f content="+1"
+ 
+diff --git a/.claude/scripts/checkReactCompilerOptimization.js b/.claude/scripts/checkReactCompilerOptimization.js
+new file mode 100644
+index 00000000000..536883c159c
+--- /dev/null
++++ b/.claude/scripts/checkReactCompilerOptimization.js
+@@ -0,0 +1,157 @@
++#!/usr/bin/env node
++
++/**
++ * Check React Compiler optimization status for a file and its imported components.
++ *
++ * Usage: node checkReactCompilerOptimization.js <file-path>
++ * Output: JSON with component names and their optimization status
++ */
++
++const {execSync} = require('child_process');
++const fs = require('fs');
++const path = require('path');
++const ts = require('typescript');
++
++// Load tsconfig once
++const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, 'tsconfig.json');
++const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
++const {options} = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath));
++const host = ts.createCompilerHost(options);
++
++/**
++ * Resolve module path using TypeScript (respects tsconfig paths).
++ */
++function resolveModule(moduleName, fromFile) {
++    const result = ts.resolveModuleName(moduleName, fromFile, options, host);
++    return result.resolvedModule?.resolvedFileName || null;
++}
++
++/**
++ * Extract import paths from file using regex.
++ */
++function getImports(filePath) {
++    const content = fs.readFileSync(filePath, 'utf8');
++    const imports = [];
++    const regex = /import\s+(?:(\w+)(?:\s*,\s*)?)?(?:\{([^}]+)\})?\s+from\s+['"]([^'"]+)['"]/g;
++    let match;
++
++    while ((match = regex.exec(content)) !== null) {
++        const [, defaultImport, namedImports, modulePath] = match;
++
++        // Skip external packages (react, react-native, lodash, etc.)
++        if (!modulePath.startsWith('@') && !modulePath.startsWith('.')) continue;
++
++        if (defaultImport) {
++            imports.push({name: defaultImport, module: modulePath});
++        }
++
++        if (namedImports) {
++            namedImports.split(',').forEach((n) => {
++                const name = n.trim().split(/\s+as\s+/).pop().trim();
++                if (name && !name.startsWith('type ')) {
++                    imports.push({name, module: modulePath});
++                }
++            });
++        }
++    }
++
++    return imports;
++}
++
++/**
++ * Run react-compiler-healthcheck and parse output.
++ */
++function runHealthcheck(fileNames) {
++    if (!fileNames.length) return {optimized: new Set(), failed: new Map()};
++
++    const glob = `**/+(${fileNames.join('|')})`;
++
++    try {
++        const output = execSync(`npx react-compiler-healthcheck --src '${glob}' --verbose 2>&1`, {
++            encoding: 'utf8',
++            timeout: 60000,
++        });
++        return parseOutput(output);
++    } catch (e) {
++        return parseOutput(e.stdout || e.message || '');
++    }
++}
++
++/**
++ * Parse healthcheck verbose output.
++ */
++function parseOutput(output) {
++    const optimized = new Set();
++
++    for (const line of output.split('\n')) {
++        // Success: Successfully compiled component [Name](path)
++        const success = line.match(/Successfully compiled (?:hook|component) \[([^\]]+)\]/);
++        if (success) {
++            optimized.add(success[1]);
++        }
++    }
++
++    return {optimized};
++}
++
++// Main
++const inputFile = process.argv[2];
++if (!inputFile || !fs.existsSync(inputFile)) {
++    console.error('Usage: node checkReactCompilerOptimization.js <file-path>');
++    process.exit(1);
++}
++
++const imports = getImports(inputFile);
++const filesToCheck = new Set([path.basename(inputFile)]);
++const importToResolved = new Map();
++
++for (const imp of imports) {
++    const resolved = resolveModule(imp.module, inputFile);
++    if (resolved?.endsWith('.tsx')) {
++        const fileName = path.basename(resolved);
++        filesToCheck.add(fileName);
++        importToResolved.set(imp.name, resolved);
++    }
++}
++
++const {optimized} = runHealthcheck([...filesToCheck]);
++
++// Extract component/hook name from the input file
++const inputFileContent = fs.readFileSync(inputFile, 'utf8');
++
++// Try to find the exported component/hook name
++let inputComponentName = null;
++const functionMatch = inputFileContent.match(/(?:export\s+default\s+)?function\s+(\w+)/);
++const constMatch = inputFileContent.match(/(?:export\s+default\s+)?const\s+(\w+)\s*[=:]/);
++const exportDefaultMatch = inputFileContent.match(/export\s+default\s+(\w+)\s*;/);
++
++if (functionMatch) {
++    inputComponentName = functionMatch[1];
++} else if (constMatch) {
++    inputComponentName = constMatch[1];
++} else if (exportDefaultMatch) {
++    inputComponentName = exportDefaultMatch[1];
++}
++
++const result = {};
++
++// Add the input file (parent) to result first
++if (inputComponentName) {
++    result[`${inputComponentName} (this file)`] = {
++        optimized: optimized.has(inputComponentName),
++        path: path.resolve(inputFile),
++    };
++}
++
++// Add imported components (children)
++for (const imp of imports) {
++    const resolvedPath = importToResolved.get(imp.name);
++    if (resolvedPath) {
++        result[imp.name] = {
++            optimized: optimized.has(imp.name),
++            path: resolvedPath,
++        };
++    }
++}
++
++console.log(JSON.stringify(result, null, 2));
+diff --git a/.claude/scripts/checkReactCompilerOptimization.sh b/.claude/scripts/checkReactCompilerOptimization.sh
+new file mode 100755
+index 00000000000..cd86cdc35fe
+--- /dev/null
++++ b/.claude/scripts/checkReactCompilerOptimization.sh
+@@ -0,0 +1,22 @@
++#!/bin/bash
++
++# Check React Compiler optimization status for a file and its imported components.
++# Usage: checkReactCompilerOptimization.sh <file-path>
++
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++
++if [[ $# -lt 1 ]]; then
++    echo "Usage: $0 <file-path>" >&2
++    exit 1
++fi
++
++FILE_PATH="$1"
++
++if [[ ! -f "$FILE_PATH" ]]; then
++    echo "File not found: $FILE_PATH" >&2
++    exit 1
++fi
++
++node "$SCRIPT_DIR/checkReactCompilerOptimization.js" "$FILE_PATH"
+diff --git a/.claude/scripts/createInlineComment.sh b/.claude/scripts/createInlineComment.sh
+new file mode 100755
+index 00000000000..755930d98b9
+--- /dev/null
++++ b/.claude/scripts/createInlineComment.sh
+@@ -0,0 +1,62 @@
++#!/bin/bash
++
++# Secure proxy script to create an inline comment on a GitHub PR.
++set -eu
++
++readonly ALLOWED_RULES_FILE="${GITHUB_WORKSPACE}/.claude/allowed-rules.txt"
++
++# Print error and exit.
++die() {
++    echo "Error: $*" >&2
++    exit 1
++}
++
++# Usage helper to avoid repeated text.
++usage() {
++    die "Usage: $0 <path> <body> <line>"
++}
++
++COMMENT_STATUS_REASON=""
++
++# Ensure the comment body references an allowed rule tag.
++validate_rule() {
++    local body="$1"
++    local rule
++
++    [[ -f "$ALLOWED_RULES_FILE" ]] || die "Comment rejected: allowed rules file missing at $ALLOWED_RULES_FILE"
++
++    rule=$(echo "$body" | grep -oE '[A-Z]+-[0-9]+' | head -1 || true)
++    [[ -n "$rule" ]] || die "Comment rejected: missing allowed rule reference (e.g. PERF-1)"
++
++    if grep -qF "$rule" "$ALLOWED_RULES_FILE"; then
++        COMMENT_STATUS_REASON="rule $rule validated"
++        return 0
++    fi
++
++    die "Comment rejected: rule $rule not present in allowed list"
++}
++
++readonly PATH_ARG="${1:-}"
++readonly BODY_ARG="${2:-}"
++readonly LINE_ARG="${3:-}"
++
++[[ -z "$PR_NUMBER" ]] && die "Environment variable PR_NUMBER is required"
++[[ -z "$GITHUB_REPOSITORY" ]] && die "Environment variable GITHUB_REPOSITORY is required"
++[[ -z "$PATH_ARG" || -z "$BODY_ARG" || -z "$LINE_ARG" ]] && usage
++
++validate_rule "$BODY_ARG"
++echo "Comment approved: $COMMENT_STATUS_REASON"
++
++COMMIT_ID=$(gh api "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha')
++readonly COMMIT_ID
++
++PAYLOAD=$(jq -n \
++    --arg body "$BODY_ARG" \
++    --arg path "$PATH_ARG" \
++    --argjson line "$LINE_ARG" \
++    --arg commit_id "$COMMIT_ID" \
++    '{body: $body, path: $path, line: $line, side: "RIGHT", commit_id: $commit_id}')
++readonly PAYLOAD
++
++gh api -X POST "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/comments" \
++    --input - <<< "$PAYLOAD" || exit 1

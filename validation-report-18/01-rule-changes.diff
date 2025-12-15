@@ -1,0 +1,312 @@
+diff --git a/.claude/agents/code-inline-reviewer.md b/.claude/agents/code-inline-reviewer.md
+index 4c30efb328a..7c09e7a421b 100644
+--- a/.claude/agents/code-inline-reviewer.md
++++ b/.claude/agents/code-inline-reviewer.md
+@@ -145,29 +145,91 @@ const [personalDetails] = useOnyx(ONYXKEYS.PERSONAL_DETAILS_LIST);
+ 
+ ### [PERF-4] Memoize objects and functions passed as props
+ 
+-- **Search patterns**: `useMemo`, `useCallback`, and prop passing patterns
++- **Search patterns**: Look for objects/functions passed as props:
++  - Inline objects: `prop={{`, `={{`
++  - Inline arrow functions: `prop={() =>`, `onPress={() =>`, `onCallback={() =>`
++  - Hooks returning objects: `return {` inside custom hooks (files starting with `use`)
++  - Object variables passed as props: `prop={someObject}` where `someObject` is not memoized
+ 
+-- **Condition**: Objects and functions passed as props should be properly memoized or simplified to primitive values to prevent unnecessary re-renders.
+-- **Reasoning**: React uses referential equality to determine if props changed. New object/function instances on every render trigger unnecessary re-renders of child components, even when the actual data hasn't changed. Memoization preserves referential stability.
++- **Condition**: Flag ONLY when ALL of these are true:
+ 
+-Good:
++  1. An object literal, arrow function, or non-memoized variable is passed as a prop to a child component
++  2. The child component IS memoized (either via `React.memo`/`memo()` OR React Compiler optimized)
++  3. The parent component is NOT optimized by React Compiler
+ 
+-```tsx
+-const reportData = useMemo(() => ({
+-    reportID: report.reportID,
+-    type: report.type,
+-    isPinned: report.isPinned,
+-}), [report.reportID, report.type, report.isPinned]);
++  **DO NOT flag if:**
++
++  - Child component is NOT memoized (it re-renders anyway, memoizing props won't help)
++  - Parent component IS optimized by React Compiler (compiler auto-memoizes)
++  - Props are primitives (strings, numbers, booleans)
++  - The object/function is already wrapped in `useMemo`/`useCallback`
++
++- **Reasoning**: React uses referential equality to determine if props changed. New object/function instances break memoization of child components. However, memoizing props only matters when the child is memoized AND the parent is not handled by React Compiler.
+ 
+-return <ReportActionItem report={reportData} />
++#### MANDATORY: Check React Compiler optimization status
++
++Before flagging or skipping PERF-4, you MUST run:
++
++```bash
++checkReactCompilerOptimization.sh <file-path>
+ ```
+ 
+-Bad:
++This returns optimization status for the parent and imported children:
++
++```json
++{
++  "ParentComponent": {
++    "optimized": true,
++    "path": "/path/to/ParentComponent.tsx"
++  },
++  "ChildButton": {
++    "optimized": false,
++    "path": "/path/to/ChildButton.tsx"
++  }
++}
++```
++
++Then check if non-optimized children use `memo()`:
++```bash
++grep -E "memo\(|React\.memo" <child-path>
++```
++
++#### Decision flow
++
++1. **Is child memoized?**
++   - `"optimized": true` → Yes (React Compiler) → go to step 2
++   - `"optimized": false` → Check manually: `grep -E "memo\(|React\.memo" <path>`
++     - Found `memo(` → Yes (manual) → go to step 2
++     - Not found → **Skip PERF-4** (child re-renders anyway)
++
++2. **Is parent optimized by React Compiler?**
++   - `"optimized": true` → **Skip PERF-4** (compiler auto-memoizes)
++   - `"optimized": false` → **Flag PERF-4** (must memoize manually)
++
++#### Examples
+ 
++**Flag this** (parent NOT compiled, child IS memoized):
+ ```tsx
+-const [report] = useOnyx(`ONYXKEYS.COLLECTION.REPORT${iouReport.id}`);
++// ❌ New object every render breaks MemoizedList's memoization
++const options = { showHeader: true, pageSize: 10 };
++return <MemoizedList options={options} />;
+ 
+-return <ReportActionItem report={report} />
++// ❌ Inline callback breaks MemoizedButton's memoization
++return <MemoizedButton onPress={() => handlePress(id)} />;
++```
++
++**Do NOT flag** (parent IS compiled by React Compiler):
++```tsx
++// ✅ React Compiler auto-memoizes - no manual useMemo/useCallback needed
++const options = { showHeader: true, pageSize: 10 };
++return <MemoizedList options={options} />;
++```
++
++**Do NOT flag** (child is NOT memoized):
++```tsx
++// ✅ RegularList is not memoized, so it re-renders anyway
++const options = { showHeader: true, pageSize: 10 };
++return <RegularList options={options} />;
+ ```
+ 
+ ---
+diff --git a/.claude/commands/review-code-pr.md b/.claude/commands/review-code-pr.md
+index 63132922c18..3dc0d7b610a 100644
+--- a/.claude/commands/review-code-pr.md
++++ b/.claude/commands/review-code-pr.md
+@@ -1,5 +1,5 @@
+ ---
+-allowed-tools: Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(addPrReaction.sh:*),Bash(createInlineComment.sh:*)
++allowed-tools: Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(addPrReaction.sh:*),Bash(createInlineComment.sh:*),Bash(checkReactCompilerOptimization.sh:*)
+ description: Review a code contribution pull request
+ ---
+ 
+diff --git a/.claude/scripts/checkReactCompilerOptimization.js b/.claude/scripts/checkReactCompilerOptimization.js
+new file mode 100644
+index 00000000000..536883c159c
+--- /dev/null
++++ b/.claude/scripts/checkReactCompilerOptimization.js
+@@ -0,0 +1,157 @@
++#!/usr/bin/env node
++
++/**
++ * Check React Compiler optimization status for a file and its imported components.
++ *
++ * Usage: node checkReactCompilerOptimization.js <file-path>
++ * Output: JSON with component names and their optimization status
++ */
++
++const {execSync} = require('child_process');
++const fs = require('fs');
++const path = require('path');
++const ts = require('typescript');
++
++// Load tsconfig once
++const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, 'tsconfig.json');
++const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
++const {options} = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath));
++const host = ts.createCompilerHost(options);
++
++/**
++ * Resolve module path using TypeScript (respects tsconfig paths).
++ */
++function resolveModule(moduleName, fromFile) {
++    const result = ts.resolveModuleName(moduleName, fromFile, options, host);
++    return result.resolvedModule?.resolvedFileName || null;
++}
++
++/**
++ * Extract import paths from file using regex.
++ */
++function getImports(filePath) {
++    const content = fs.readFileSync(filePath, 'utf8');
++    const imports = [];
++    const regex = /import\s+(?:(\w+)(?:\s*,\s*)?)?(?:\{([^}]+)\})?\s+from\s+['"]([^'"]+)['"]/g;
++    let match;
++
++    while ((match = regex.exec(content)) !== null) {
++        const [, defaultImport, namedImports, modulePath] = match;
++
++        // Skip external packages (react, react-native, lodash, etc.)
++        if (!modulePath.startsWith('@') && !modulePath.startsWith('.')) continue;
++
++        if (defaultImport) {
++            imports.push({name: defaultImport, module: modulePath});
++        }
++
++        if (namedImports) {
++            namedImports.split(',').forEach((n) => {
++                const name = n.trim().split(/\s+as\s+/).pop().trim();
++                if (name && !name.startsWith('type ')) {
++                    imports.push({name, module: modulePath});
++                }
++            });
++        }
++    }
++
++    return imports;
++}
++
++/**
++ * Run react-compiler-healthcheck and parse output.
++ */
++function runHealthcheck(fileNames) {
++    if (!fileNames.length) return {optimized: new Set(), failed: new Map()};
++
++    const glob = `**/+(${fileNames.join('|')})`;
++
++    try {
++        const output = execSync(`npx react-compiler-healthcheck --src '${glob}' --verbose 2>&1`, {
++            encoding: 'utf8',
++            timeout: 60000,
++        });
++        return parseOutput(output);
++    } catch (e) {
++        return parseOutput(e.stdout || e.message || '');
++    }
++}
++
++/**
++ * Parse healthcheck verbose output.
++ */
++function parseOutput(output) {
++    const optimized = new Set();
++
++    for (const line of output.split('\n')) {
++        // Success: Successfully compiled component [Name](path)
++        const success = line.match(/Successfully compiled (?:hook|component) \[([^\]]+)\]/);
++        if (success) {
++            optimized.add(success[1]);
++        }
++    }
++
++    return {optimized};
++}
++
++// Main
++const inputFile = process.argv[2];
++if (!inputFile || !fs.existsSync(inputFile)) {
++    console.error('Usage: node checkReactCompilerOptimization.js <file-path>');
++    process.exit(1);
++}
++
++const imports = getImports(inputFile);
++const filesToCheck = new Set([path.basename(inputFile)]);
++const importToResolved = new Map();
++
++for (const imp of imports) {
++    const resolved = resolveModule(imp.module, inputFile);
++    if (resolved?.endsWith('.tsx')) {
++        const fileName = path.basename(resolved);
++        filesToCheck.add(fileName);
++        importToResolved.set(imp.name, resolved);
++    }
++}
++
++const {optimized} = runHealthcheck([...filesToCheck]);
++
++// Extract component/hook name from the input file
++const inputFileContent = fs.readFileSync(inputFile, 'utf8');
++
++// Try to find the exported component/hook name
++let inputComponentName = null;
++const functionMatch = inputFileContent.match(/(?:export\s+default\s+)?function\s+(\w+)/);
++const constMatch = inputFileContent.match(/(?:export\s+default\s+)?const\s+(\w+)\s*[=:]/);
++const exportDefaultMatch = inputFileContent.match(/export\s+default\s+(\w+)\s*;/);
++
++if (functionMatch) {
++    inputComponentName = functionMatch[1];
++} else if (constMatch) {
++    inputComponentName = constMatch[1];
++} else if (exportDefaultMatch) {
++    inputComponentName = exportDefaultMatch[1];
++}
++
++const result = {};
++
++// Add the input file (parent) to result first
++if (inputComponentName) {
++    result[`${inputComponentName} (this file)`] = {
++        optimized: optimized.has(inputComponentName),
++        path: path.resolve(inputFile),
++    };
++}
++
++// Add imported components (children)
++for (const imp of imports) {
++    const resolvedPath = importToResolved.get(imp.name);
++    if (resolvedPath) {
++        result[imp.name] = {
++            optimized: optimized.has(imp.name),
++            path: resolvedPath,
++        };
++    }
++}
++
++console.log(JSON.stringify(result, null, 2));
+diff --git a/.claude/scripts/checkReactCompilerOptimization.sh b/.claude/scripts/checkReactCompilerOptimization.sh
+new file mode 100755
+index 00000000000..cd86cdc35fe
+--- /dev/null
++++ b/.claude/scripts/checkReactCompilerOptimization.sh
+@@ -0,0 +1,22 @@
++#!/bin/bash
++
++# Check React Compiler optimization status for a file and its imported components.
++# Usage: checkReactCompilerOptimization.sh <file-path>
++
++set -eu
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++
++if [[ $# -lt 1 ]]; then
++    echo "Usage: $0 <file-path>" >&2
++    exit 1
++fi
++
++FILE_PATH="$1"
++
++if [[ ! -f "$FILE_PATH" ]]; then
++    echo "File not found: $FILE_PATH" >&2
++    exit 1
++fi
++
++node "$SCRIPT_DIR/checkReactCompilerOptimization.js" "$FILE_PATH"

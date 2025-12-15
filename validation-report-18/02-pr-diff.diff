@@ -1,0 +1,1523 @@
+diff --git a/patches/react-native-web/details.md b/patches/react-native-web/details.md
+index 8c7df48f3ea2..753961efd6b0 100644
+--- a/patches/react-native-web/details.md
++++ b/patches/react-native-web/details.md
+@@ -60,17 +60,17 @@
+ - E/App issue: 🛑
+ - PR introducing patch: 
+ 
+-### [react-native-web+0.21.2+006+remove-focus-trap-from-modal.patch](react-native-web+0.21.2+006+remove-focus-trap-from-modal.patch)
++### [react-native-web+0.21.2+006+modal.patch](react-native-web+0.21.2+006+modal.patch)
+ 
+ - Reason:
+   
+     ```
+-    Removes the library's focus trap implementation so the App can have its own, allowing it to have custom implementation and fixes.
++    Removes the library's focus trap implementation and allows customizing zIndex of the modal. App can handle focus trapping and zIndex management on its own, allowing it to have custom implementation and fixes.
+     ```
+   
+ - Upstream PR/issue: 🛑
+ - E/App issue: 🛑
+-- PR introducing patch: https://github.com/Expensify/App/pull/39520
++- PR introducing patch: https://github.com/Expensify/App/pull/39520 and https://github.com/Expensify/App/pull/76277
+ 
+ ### [react-native-web+0.21.2+007+fix-scrollable-overflown-text.patch](react-native-web+0.21.2+007+fix-scrollable-overflown-text.patch)
+ 
+diff --git a/patches/react-native-web/react-native-web+0.21.2+006+modal.patch b/patches/react-native-web/react-native-web+0.21.2+006+modal.patch
+new file mode 100644
+index 000000000000..75bf2a379368
+--- /dev/null
++++ b/patches/react-native-web/react-native-web+0.21.2+006+modal.patch
+@@ -0,0 +1,82 @@
++diff --git a/node_modules/react-native-web/dist/exports/Modal/ModalAnimation.js b/node_modules/react-native-web/dist/exports/Modal/ModalAnimation.js
++index 2017707..d07af81 100644
++--- a/node_modules/react-native-web/dist/exports/Modal/ModalAnimation.js
+++++ b/node_modules/react-native-web/dist/exports/Modal/ModalAnimation.js
++@@ -12,21 +12,24 @@ import * as React from 'react';
++ import StyleSheet from '../StyleSheet';
++ import createElement from '../createElement';
++ var ANIMATION_DURATION = 250;
++-function getAnimationStyle(animationType, visible) {
+++function getAnimationStyle(animationType, visible, zIndex) {
++   if (animationType === 'slide') {
++     return visible ? animatedSlideInStyles : animatedSlideOutStyles;
++   }
++   if (animationType === 'fade') {
++     return visible ? animatedFadeInStyles : animatedFadeOutStyles;
++   }
++-  return visible ? styles.container : styles.hidden;
+++  return visible ? [styles.container, {
+++    zIndex
+++  }] : styles.hidden;
++ }
++ function ModalAnimation(props) {
++   var animationType = props.animationType,
++     children = props.children,
++     onDismiss = props.onDismiss,
++     onShow = props.onShow,
++-    visible = props.visible;
+++    visible = props.visible,
+++    zIndex = props.zIndex;
++   var _React$useState = React.useState(false),
++     isRendering = _React$useState[0],
++     setIsRendering = _React$useState[1];
++@@ -64,7 +67,7 @@ function ModalAnimation(props) {
++     wasVisible.current = visible;
++   }, [isAnimated, visible, animationEndCallback]);
++   return isRendering || visible ? createElement('div', {
++-    style: isRendering ? getAnimationStyle(animationType, visible) : styles.hidden,
+++    style: isRendering ? getAnimationStyle(animationType, visible, zIndex) : styles.hidden,
++     onAnimationEnd: animationEndCallback,
++     children
++   }) : null;
++@@ -75,8 +78,7 @@ var styles = StyleSheet.create({
++     top: 0,
++     right: 0,
++     bottom: 0,
++-    left: 0,
++-    zIndex: 9999
+++    left: 0
++   },
++   animatedIn: {
++     animationDuration: ANIMATION_DURATION + "ms",
++diff --git a/node_modules/react-native-web/dist/exports/Modal/index.js b/node_modules/react-native-web/dist/exports/Modal/index.js
++index a9a7c36..27cb5ba 100644
++--- a/node_modules/react-native-web/dist/exports/Modal/index.js
+++++ b/node_modules/react-native-web/dist/exports/Modal/index.js
++@@ -52,6 +52,7 @@ function addActiveModal(modalId, listener) {
++   notifyActiveModalListeners();
++ }
++ var Modal = /*#__PURE__*/React.forwardRef((props, forwardedRef) => {
+++  var _props$style$zIndex, _props$style;
++   var animationType = props.animationType,
++     children = props.children,
++     onDismiss = props.onDismiss,
++@@ -87,14 +88,13 @@ var Modal = /*#__PURE__*/React.forwardRef((props, forwardedRef) => {
++     animationType: animationType,
++     onDismiss: onDismissCallback,
++     onShow: onShowCallback,
++-    visible: visible
++-  }, /*#__PURE__*/React.createElement(ModalFocusTrap, {
++-    active: isActive
+++    visible: visible,
+++    zIndex: (_props$style$zIndex = props == null ? void 0 : (_props$style = props.style) == null ? void 0 : _props$style.zIndex) !== null && _props$style$zIndex !== void 0 ? _props$style$zIndex : 9999
++   }, /*#__PURE__*/React.createElement(ModalContent, _extends({}, rest, {
++     active: isActive,
++     onRequestClose: onRequestClose,
++     ref: forwardedRef,
++     transparent: transparent
++-  }), children))));
+++  }), children)));
++ });
++ export default Modal;
++\ No newline at end of file
+diff --git a/patches/react-native-web/react-native-web+0.21.2+006+remove-focus-trap-from-modal.patch b/patches/react-native-web/react-native-web+0.21.2+006+remove-focus-trap-from-modal.patch
+deleted file mode 100644
+index eac73db57e35..000000000000
+--- a/patches/react-native-web/react-native-web+0.21.2+006+remove-focus-trap-from-modal.patch
++++ /dev/null
+@@ -1,20 +0,0 @@
+-diff --git a/node_modules/react-native-web/dist/exports/Modal/index.js b/node_modules/react-native-web/dist/exports/Modal/index.js
+-index a9a7c36..522ef93 100644
+---- a/node_modules/react-native-web/dist/exports/Modal/index.js
+-+++ b/node_modules/react-native-web/dist/exports/Modal/index.js
+-@@ -88,13 +88,11 @@ var Modal = /*#__PURE__*/React.forwardRef((props, forwardedRef) => {
+-     onDismiss: onDismissCallback,
+-     onShow: onShowCallback,
+-     visible: visible
+--  }, /*#__PURE__*/React.createElement(ModalFocusTrap, {
+--    active: isActive
+-   }, /*#__PURE__*/React.createElement(ModalContent, _extends({}, rest, {
+-     active: isActive,
+-     onRequestClose: onRequestClose,
+-     ref: forwardedRef,
+-     transparent: transparent
+--  }), children))));
+-+  }), children)));
+- });
+- export default Modal;
+-\ No newline at end of file
+diff --git a/src/CONST/index.ts b/src/CONST/index.ts
+index a1628d228e49..3903feb04c6e 100755
+--- a/src/CONST/index.ts
++++ b/src/CONST/index.ts
+@@ -211,6 +211,7 @@ const CONST = {
+     ANIMATED_HIGHLIGHT_END_DELAY: 800,
+     ANIMATED_HIGHLIGHT_END_DURATION: 2000,
+     ANIMATED_TRANSITION: 300,
++    SIDE_PANEL_ANIMATED_TRANSITION: 300,
+     ANIMATED_TRANSITION_FROM_VALUE: 100,
+     ANIMATED_PROGRESS_BAR_DELAY: 300,
+     ANIMATED_PROGRESS_BAR_OPACITY_DURATION: 300,
+diff --git a/src/components/FocusTrap/FocusTrapForScreen/index.web.tsx b/src/components/FocusTrap/FocusTrapForScreen/index.web.tsx
+index 2cf82c6bb63a..e2f0b6df9599 100644
+--- a/src/components/FocusTrap/FocusTrapForScreen/index.web.tsx
++++ b/src/components/FocusTrap/FocusTrapForScreen/index.web.tsx
+@@ -50,6 +50,8 @@ function FocusTrapForScreen({children, focusTrapSettings}: FocusTrapProps) {
+                 },
+                 trapStack: sharedTrapStack,
+                 allowOutsideClick: true,
++                // Clicking outside should break the trap so side panel can remain interactive.
++                clickOutsideDeactivates: true,
+                 fallbackFocus: document.body,
+                 delayInitialFocus: CONST.ANIMATED_TRANSITION,
+                 initialFocus: false,
+diff --git a/src/components/HeaderWithBackButton/index.tsx b/src/components/HeaderWithBackButton/index.tsx
+index 68d9a99b4644..fcd2b2139f91 100755
+--- a/src/components/HeaderWithBackButton/index.tsx
++++ b/src/components/HeaderWithBackButton/index.tsx
+@@ -11,7 +11,7 @@ import * as Expensicons from '@components/Icon/Expensicons';
+ import PinButton from '@components/PinButton';
+ import PressableWithoutFeedback from '@components/Pressable/PressableWithoutFeedback';
+ import SearchButton from '@components/Search/SearchRouter/SearchButton';
+-import HelpButton from '@components/SidePanel/HelpComponents/HelpButton';
++import SidePanelButton from '@components/SidePanel/SidePanelButton';
+ import ThreeDotsMenu from '@components/ThreeDotsMenu';
+ import Tooltip from '@components/Tooltip';
+ import {useMemoizedLazyExpensifyIcons} from '@hooks/useLazyAsset';
+@@ -299,7 +299,7 @@ function HeaderWithBackButton({
+                         </Tooltip>
+                     )}
+                 </View>
+-                {shouldDisplayHelpButton && <HelpButton />}
++                {shouldDisplayHelpButton && <SidePanelButton />}
+                 {shouldDisplaySearchRouter && <SearchButton />}
+             </View>
+         </View>
+diff --git a/src/components/Modal/ReanimatedModal/index.tsx b/src/components/Modal/ReanimatedModal/index.tsx
+index e7301aff92b8..9216f61319a8 100644
+--- a/src/components/Modal/ReanimatedModal/index.tsx
++++ b/src/components/Modal/ReanimatedModal/index.tsx
+@@ -1,7 +1,7 @@
+ import noop from 'lodash/noop';
+ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+ import type {NativeEventSubscription, ViewStyle} from 'react-native';
+-import {BackHandler, InteractionManager, Modal, View} from 'react-native';
++import {BackHandler, InteractionManager, Modal, StyleSheet, View} from 'react-native';
+ import {LayoutAnimationConfig} from 'react-native-reanimated';
+ import FocusTrapForModal from '@components/FocusTrap/FocusTrapForModal';
+ import KeyboardAvoidingView from '@components/KeyboardAvoidingView';
+@@ -160,6 +160,10 @@ function ReanimatedModal({
+         }
+     }, [onModalHide]);
+ 
++    const modalStyle = useMemo(() => {
++        return {zIndex: StyleSheet.flatten(style)?.zIndex};
++    }, [style]);
++
+     const containerView = (
+         <Container
+             pointerEvents="box-none"
+@@ -221,6 +225,7 @@ function ReanimatedModal({
+                         onModalHide();
+                     }
+                 }}
++                style={modalStyle}
+                 // eslint-disable-next-line react/jsx-props-no-spreading
+                 {...props}
+             >
+diff --git a/src/components/Navigation/RootNavigatorExtraContent/index.tsx b/src/components/Navigation/RootNavigatorExtraContent/index.tsx
+index 3ca583828360..8ec9f9c76fae 100644
+--- a/src/components/Navigation/RootNavigatorExtraContent/index.tsx
++++ b/src/components/Navigation/RootNavigatorExtraContent/index.tsx
+@@ -1,14 +1,14 @@
+ import React from 'react';
+ import TopLevelNavigationTabBar from '@components/Navigation/TopLevelNavigationTabBar';
+ import SidePanel from '@components/SidePanel';
+-import type RootNavigatorExtraContentProps from './types';
++import type {ExtraContentProps} from '@libs/Navigation/PlatformStackNavigation/types';
+ 
+-function RootNavigatorExtraContent({state}: RootNavigatorExtraContentProps) {
++function RootNavigatorExtraContent({state, navigation}: ExtraContentProps) {
+     return (
+         <>
+             <TopLevelNavigationTabBar state={state} />
+             {/* On web, the SidePanel is rendered outside of the main navigator so it can be positioned alongside the screen */}
+-            <SidePanel />
++            <SidePanel navigation={navigation} />
+         </>
+     );
+ }
+diff --git a/src/components/Navigation/TopBar.tsx b/src/components/Navigation/TopBar.tsx
+index 6e0607f2493b..fbb7f75224eb 100644
+--- a/src/components/Navigation/TopBar.tsx
++++ b/src/components/Navigation/TopBar.tsx
+@@ -4,7 +4,7 @@ import type {OnyxEntry} from 'react-native-onyx';
+ import LoadingBar from '@components/LoadingBar';
+ import {PressableWithoutFeedback} from '@components/Pressable';
+ import SearchButton from '@components/Search/SearchRouter/SearchButton';
+-import HelpButton from '@components/SidePanel/HelpComponents/HelpButton';
++import SidePanelButton from '@components/SidePanel/SidePanelButton';
+ import Text from '@components/Text';
+ import {WideRHPContext} from '@components/WideRHPContextProvider';
+ import useLoadingBarVisibility from '@hooks/useLoadingBarVisibility';
+@@ -69,7 +69,7 @@ function TopBar({breadcrumbLabel, shouldDisplaySearch = true, shouldDisplayHelpB
+                         <Text style={[styles.textBlue]}>{translate('common.cancel')}</Text>
+                     </PressableWithoutFeedback>
+                 )}
+-                {shouldDisplayHelpButton && <HelpButton />}
++                {shouldDisplayHelpButton && <SidePanelButton />}
+                 {displaySearch && <SearchButton />}
+             </View>
+             <LoadingBar shouldShow={!isWideRHPVisible && (shouldShowLoadingBarForReports || shouldShowLoadingBar)} />
+diff --git a/src/components/PopoverWithMeasuredContent/PopoverWithMeasuredContentBase.tsx b/src/components/PopoverWithMeasuredContent/PopoverWithMeasuredContentBase.tsx
+index 5c66617bc7d0..856667e42c07 100644
+--- a/src/components/PopoverWithMeasuredContent/PopoverWithMeasuredContentBase.tsx
++++ b/src/components/PopoverWithMeasuredContent/PopoverWithMeasuredContentBase.tsx
+@@ -6,12 +6,10 @@ import * as ActionSheetAwareScrollView from '@components/ActionSheetAwareScrollV
+ import type {PopoverAnchorPosition} from '@components/Modal/types';
+ import Popover from '@components/Popover';
+ import usePrevious from '@hooks/usePrevious';
+-import useSidePanel from '@hooks/useSidePanel';
+ import useThemeStyles from '@hooks/useThemeStyles';
+ import useWindowDimensions from '@hooks/useWindowDimensions';
+ import ComposerFocusManager from '@libs/ComposerFocusManager';
+ import PopoverWithMeasuredContentUtils from '@libs/PopoverWithMeasuredContentUtils';
+-import variables from '@styles/variables';
+ import CONST from '@src/CONST';
+ import type PopoverWithMeasuredContentProps from './types';
+ 
+@@ -60,9 +58,7 @@ function PopoverWithMeasuredContentBase({
+     const [isContentMeasured, setIsContentMeasured] = useState(popoverWidth > 0 && popoverHeight > 0);
+     const prevIsVisible = usePrevious(isVisible);
+     const prevAnchorPosition = usePrevious(anchorPosition);
+-    const {shouldHideSidePanel} = useSidePanel();
+-    const availableWidth = windowWidth - (shouldHideSidePanel ? 0 : variables.sideBarWidth);
+-    const prevWindowDimensions = usePrevious({availableWidth, windowHeight});
++    const prevWindowDimensions = usePrevious({windowWidth, windowHeight});
+ 
+     const hasStaticDimensions = popoverDimensions.width > 0 && popoverDimensions.height > 0;
+     const modalId = useMemo(() => ComposerFocusManager.getId(), []);
+@@ -77,7 +73,7 @@ function PopoverWithMeasuredContentBase({
+     if (!prevIsVisible && isVisible && isContentMeasured && !shouldSkipRemeasurement) {
+         // Check if anything significant changed that would require re-measurement
+         const hasAnchorPositionChanged = !deepEqual(prevAnchorPosition, anchorPosition);
+-        const hasWindowSizeChanged = !deepEqual(prevWindowDimensions, {availableWidth, windowHeight});
++        const hasWindowSizeChanged = !deepEqual(prevWindowDimensions, {windowWidth, windowHeight});
+ 
+         // Only reset if:
+         // 1. We don't have static dimensions, OR
+@@ -151,7 +147,7 @@ function PopoverWithMeasuredContentBase({
+     }, [anchorPosition.horizontal, anchorPosition.vertical, anchorAlignment.horizontal, anchorAlignment.vertical, popoverWidth, popoverHeight]);
+ 
+     const positionCalculations = useMemo(() => {
+-        const horizontalShift = PopoverWithMeasuredContentUtils.computeHorizontalShift(adjustedAnchorPosition.left, popoverWidth, availableWidth);
++        const horizontalShift = PopoverWithMeasuredContentUtils.computeHorizontalShift(adjustedAnchorPosition.left, popoverWidth, windowWidth);
+         const verticalShift = PopoverWithMeasuredContentUtils.computeVerticalShift(
+             adjustedAnchorPosition.top,
+             popoverHeight,
+@@ -160,7 +156,7 @@ function PopoverWithMeasuredContentBase({
+             shouldSwitchPositionIfOverflow,
+         );
+         return {horizontalShift, verticalShift};
+-    }, [adjustedAnchorPosition.left, adjustedAnchorPosition.top, popoverWidth, popoverHeight, availableWidth, windowHeight, anchorDimensions.height, shouldSwitchPositionIfOverflow]);
++    }, [adjustedAnchorPosition.left, adjustedAnchorPosition.top, popoverWidth, popoverHeight, windowWidth, windowHeight, anchorDimensions.height, shouldSwitchPositionIfOverflow]);
+ 
+     const shiftedAnchorPosition: PopoverAnchorPosition = useMemo(() => {
+         const result: PopoverAnchorPosition = {
+diff --git a/src/components/ScreenWrapper/index.tsx b/src/components/ScreenWrapper/index.tsx
+index 853e72bfc8b8..db67e62e489a 100644
+--- a/src/components/ScreenWrapper/index.tsx
++++ b/src/components/ScreenWrapper/index.tsx
+@@ -186,7 +186,7 @@ function ScreenWrapper({
+             onEntryTransitionEnd?.();
+         }, CONST.SCREEN_TRANSITION_END_TIMEOUT);
+ 
+-        const unsubscribeTransitionEnd = navigation.addListener('transitionEnd', (event) => {
++        const unsubscribeTransitionEnd = navigation.addListener?.('transitionEnd', (event) => {
+             // Prevent firing the prop callback when user is exiting the page.
+             if (event?.data?.closing) {
+                 return;
+diff --git a/src/components/Search/SearchPageHeader/SearchPageHeaderInput.tsx b/src/components/Search/SearchPageHeader/SearchPageHeaderInput.tsx
+index c4f53ee3ca58..a14831ee28cb 100644
+--- a/src/components/Search/SearchPageHeader/SearchPageHeaderInput.tsx
++++ b/src/components/Search/SearchPageHeader/SearchPageHeaderInput.tsx
+@@ -18,7 +18,7 @@ import type {SearchQueryJSON, SearchQueryString} from '@components/Search/types'
+ import type {SearchQueryItem} from '@components/SelectionListWithSections/Search/SearchQueryListItem';
+ import {isSearchQueryItem} from '@components/SelectionListWithSections/Search/SearchQueryListItem';
+ import type {SelectionListHandle} from '@components/SelectionListWithSections/types';
+-import HelpButton from '@components/SidePanel/HelpComponents/HelpButton';
++import SidePanelButton from '@components/SidePanel/SidePanelButton';
+ import {useMemoizedLazyExpensifyIcons} from '@hooks/useLazyAsset';
+ import useOnyx from '@hooks/useOnyx';
+ import useResponsiveLayout from '@hooks/useResponsiveLayout';
+@@ -481,7 +481,7 @@ function SearchPageHeaderInput({queryJSON, searchRouterListVisible, hideSearchRo
+                     )}
+                 </View>
+             </View>
+-            <HelpButton style={[styles.mt1Half]} />
++            <SidePanelButton style={[styles.mt1Half]} />
+         </View>
+     );
+ }
+diff --git a/src/components/Search/SearchRouter/SearchRouterModal.tsx b/src/components/Search/SearchRouter/SearchRouterModal.tsx
+index a75eb69c9f24..00a6236da449 100644
+--- a/src/components/Search/SearchRouter/SearchRouterModal.tsx
++++ b/src/components/Search/SearchRouter/SearchRouterModal.tsx
+@@ -1,4 +1,5 @@
+-import React, {useState} from 'react';
++import React, {useEffect, useState} from 'react';
++import {Dimensions} from 'react-native';
+ import FocusTrapForModal from '@components/FocusTrap/FocusTrapForModal';
+ import Modal from '@components/Modal';
+ import ScreenWrapperContainer from '@components/ScreenWrapper/ScreenWrapperContainer';
+@@ -19,6 +20,18 @@ function SearchRouterModal() {
+     // On mWeb Safari, the input caret stuck for a moment while the modal is animating. So, we hide the caret until the animation is done.
+     const [shouldHideInputCaret, setShouldHideInputCaret] = useState(isMobileWebIOS);
+ 
++    useEffect(() => {
++        if (!isSearchRouterDisplayed) {
++            return;
++        }
++
++        const subscription = Dimensions.addEventListener('change', closeSearchRouter);
++
++        return () => {
++            subscription.remove();
++        };
++    }, [isSearchRouterDisplayed, closeSearchRouter]);
++
+     const modalType = shouldUseNarrowLayout ? CONST.MODAL.MODAL_TYPE.CENTERED_SWIPEABLE_TO_RIGHT : CONST.MODAL.MODAL_TYPE.POPOVER;
+     return (
+         <Modal
+diff --git a/src/components/SidePanel/Concierge/index.tsx b/src/components/SidePanel/Concierge/index.tsx
+new file mode 100644
+index 000000000000..bedce528c424
+--- /dev/null
++++ b/src/components/SidePanel/Concierge/index.tsx
+@@ -0,0 +1,31 @@
++import {NavigationRouteContext} from '@react-navigation/native';
++import React, {useMemo} from 'react';
++import useOnyx from '@hooks/useOnyx';
++import type {ExtraContentProps, PlatformStackNavigationProp} from '@libs/Navigation/PlatformStackNavigation/types';
++import type {ReportsSplitNavigatorParamList} from '@libs/Navigation/types';
++import ReportScreen from '@pages/home/ReportScreen';
++import ONYXKEYS from '@src/ONYXKEYS';
++import SCREENS from '@src/SCREENS';
++
++function Concierge({navigation}: Pick<ExtraContentProps, 'navigation'>) {
++    const [conciergeReportID] = useOnyx(ONYXKEYS.CONCIERGE_REPORT_ID, {canBeMissing: true});
++    const route = useMemo(() => !!conciergeReportID && ({name: SCREENS.REPORT, params: {reportID: conciergeReportID}, key: 'Report-Concierge-Key'} as const), [conciergeReportID]);
++
++    if (!route) {
++        return null;
++    }
++
++    return (
++        <NavigationRouteContext.Provider value={route}>
++            <ReportScreen
++                route={route}
++                navigation={navigation as unknown as PlatformStackNavigationProp<ReportsSplitNavigatorParamList, typeof SCREENS.REPORT>}
++                isInSidePanel
++            />
++        </NavigationRouteContext.Provider>
++    );
++}
++
++Concierge.displayName = 'ConciergeSidePanel';
++
++export default Concierge;
+diff --git a/src/components/SidePanel/HelpComponents/HelpButton/HelpButtonBase.tsx b/src/components/SidePanel/HelpComponents/HelpButton/HelpButtonBase.tsx
+deleted file mode 100644
+index 8fbe25e8787c..000000000000
+--- a/src/components/SidePanel/HelpComponents/HelpButton/HelpButtonBase.tsx
++++ /dev/null
+@@ -1,12 +0,0 @@
+-import type HelpButtonProps from './types';
+-
+-// Help panel is currently disabled. To open it manually, run:
+-// Onyx.set('nvp_sidePanel', { open: true }) in the console.
+-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+-function HelpButton({style}: HelpButtonProps) {
+-    return null;
+-}
+-
+-HelpButton.displayName = 'HelpButtonBase';
+-
+-export default HelpButton;
+diff --git a/src/components/SidePanel/HelpComponents/HelpButton/index.native.tsx b/src/components/SidePanel/HelpComponents/HelpButton/index.native.tsx
+deleted file mode 100644
+index ffb077b54b93..000000000000
+--- a/src/components/SidePanel/HelpComponents/HelpButton/index.native.tsx
++++ /dev/null
+@@ -1,18 +0,0 @@
+-import React from 'react';
+-import SidePanel from '@components/SidePanel/index';
+-import HelpButtonBase from './HelpButtonBase';
+-import type HelpButtonProps from './types';
+-
+-function HelpButton({style}: HelpButtonProps) {
+-    return (
+-        <>
+-            {/* Render SidePanel here on native platforms, since it's not included in RootNavigatorExtraContent like on web */}
+-            <SidePanel />
+-            <HelpButtonBase style={style} />
+-        </>
+-    );
+-}
+-
+-HelpButton.displayName = 'HelpButton';
+-
+-export default HelpButton;
+diff --git a/src/components/SidePanel/HelpComponents/HelpButton/index.tsx b/src/components/SidePanel/HelpComponents/HelpButton/index.tsx
+deleted file mode 100644
+index 0c195f551579..000000000000
+--- a/src/components/SidePanel/HelpComponents/HelpButton/index.tsx
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import React from 'react';
+-import HelpButtonBase from './HelpButtonBase';
+-import type HelpButtonProps from './types';
+-
+-function HelpButton({style}: HelpButtonProps) {
+-    return <HelpButtonBase style={style} />;
+-}
+-
+-HelpButton.displayName = 'HelpButton';
+-
+-export default HelpButton;
+diff --git a/src/components/SidePanel/SidePanelButton/SidePanelButtonBase.tsx b/src/components/SidePanel/SidePanelButton/SidePanelButtonBase.tsx
+new file mode 100644
+index 000000000000..77fac4bce7fc
+--- /dev/null
++++ b/src/components/SidePanel/SidePanelButton/SidePanelButtonBase.tsx
+@@ -0,0 +1,43 @@
++import React from 'react';
++import Icon from '@components/Icon';
++import {PressableWithoutFeedback} from '@components/Pressable';
++import Tooltip from '@components/Tooltip';
++import {useMemoizedLazyExpensifyIcons} from '@hooks/useLazyAsset';
++import useLocalize from '@hooks/useLocalize';
++import useSidePanel from '@hooks/useSidePanel';
++import useTheme from '@hooks/useTheme';
++import useThemeStyles from '@hooks/useThemeStyles';
++import type SidePanelButtonProps from './types';
++
++function SidePanelButtonBase({style}: SidePanelButtonProps) {
++    const styles = useThemeStyles();
++    const theme = useTheme();
++    const {translate} = useLocalize();
++    const {openSidePanel, shouldHideHelpButton} = useSidePanel();
++    const {ConciergeAvatar} = useMemoizedLazyExpensifyIcons(['ConciergeAvatar']);
++
++    if (shouldHideHelpButton) {
++        return null;
++    }
++
++    return (
++        <Tooltip text={translate('common.help')}>
++            <PressableWithoutFeedback
++                accessibilityLabel={translate('common.help')}
++                style={[styles.flexRow, styles.touchableButtonImage, style]}
++                onPress={openSidePanel}
++            >
++                <Icon
++                    src={ConciergeAvatar}
++                    fill={theme.icon}
++                    width={28}
++                    height={28}
++                />
++            </PressableWithoutFeedback>
++        </Tooltip>
++    );
++}
++
++SidePanelButtonBase.displayName = 'SidePanelButtonBase';
++
++export default SidePanelButtonBase;
+diff --git a/src/components/SidePanel/SidePanelButton/index.native.tsx b/src/components/SidePanel/SidePanelButton/index.native.tsx
+new file mode 100644
+index 000000000000..71df7e2acc19
+--- /dev/null
++++ b/src/components/SidePanel/SidePanelButton/index.native.tsx
+@@ -0,0 +1,8 @@
++// Side Panel is disabled on native platforms
++function SidePanelButton() {
++    return null;
++}
++
++SidePanelButton.displayName = 'SidePanelButton';
++
++export default SidePanelButton;
+diff --git a/src/components/SidePanel/SidePanelButton/index.tsx b/src/components/SidePanel/SidePanelButton/index.tsx
+new file mode 100644
+index 000000000000..21ea02ef113d
+--- /dev/null
++++ b/src/components/SidePanel/SidePanelButton/index.tsx
+@@ -0,0 +1,11 @@
++import React from 'react';
++import SidePanelButtonBase from './SidePanelButtonBase';
++import type SidePanelButtonProps from './types';
++
++function SidePanelButton({style}: SidePanelButtonProps) {
++    return <SidePanelButtonBase style={style} />;
++}
++
++SidePanelButton.displayName = 'SidePanelButton';
++
++export default SidePanelButton;
+diff --git a/src/components/SidePanel/HelpComponents/HelpButton/types.ts b/src/components/SidePanel/SidePanelButton/types.ts
+similarity index 58%
+rename from src/components/SidePanel/HelpComponents/HelpButton/types.ts
+rename to src/components/SidePanel/SidePanelButton/types.ts
+index e7e24e93c582..126d0b1d45b3 100644
+--- a/src/components/SidePanel/HelpComponents/HelpButton/types.ts
++++ b/src/components/SidePanel/SidePanelButton/types.ts
+@@ -1,7 +1,7 @@
+ import type {StyleProp, ViewStyle} from 'react-native';
+ 
+-type HelpButtonProps = {
++type SidePanelButtonProps = {
+     style?: StyleProp<ViewStyle>;
+ };
+ 
+-export default HelpButtonProps;
++export default SidePanelButtonProps;
+diff --git a/src/components/SidePanel/SidePanelContextProvider.tsx b/src/components/SidePanel/SidePanelContextProvider.tsx
+index 18a288e34e76..cfea33384493 100644
+--- a/src/components/SidePanel/SidePanelContextProvider.tsx
++++ b/src/components/SidePanel/SidePanelContextProvider.tsx
+@@ -46,27 +46,27 @@ const SidePanelContext = createContext<SidePanelContextProps>({
+ function SidePanelContextProvider({children}: PropsWithChildren) {
+     const {isExtraLargeScreenWidth, shouldUseNarrowLayout} = useResponsiveLayout();
+     const {windowWidth} = useWindowDimensions();
+-    const sidePanelWidth = shouldUseNarrowLayout ? windowWidth : variables.sideBarWidth;
++    const sidePanelWidth = shouldUseNarrowLayout ? windowWidth : variables.sidePanelWidth;
+ 
+     const [isSidePanelTransitionEnded, setIsSidePanelTransitionEnded] = useState(true);
+     const {shouldHideSidePanel, shouldHideSidePanelBackdrop, shouldHideHelpButton, isSidePanelHiddenOrLargeScreen, sidePanelNVP} = useSidePanelDisplayStatus();
+     const shouldHideToolTip = isExtraLargeScreenWidth ? !isSidePanelTransitionEnded : !shouldHideSidePanel;
+ 
+     const shouldApplySidePanelOffset = isExtraLargeScreenWidth && !shouldHideSidePanel;
+-    const sidePanelOffset = useRef(new Animated.Value(shouldApplySidePanelOffset ? variables.sideBarWidth : 0));
++    const sidePanelOffset = useRef(new Animated.Value(shouldApplySidePanelOffset ? variables.sidePanelWidth : 0));
+     const sidePanelTranslateX = useRef(new Animated.Value(shouldHideSidePanel ? sidePanelWidth : 0));
+ 
+     useEffect(() => {
+         setIsSidePanelTransitionEnded(false);
+         Animated.parallel([
+             Animated.timing(sidePanelOffset.current, {
+-                toValue: shouldApplySidePanelOffset ? variables.sideBarWidth : 0,
+-                duration: CONST.ANIMATED_TRANSITION,
++                toValue: shouldApplySidePanelOffset ? variables.sidePanelWidth : 0,
++                duration: CONST.SIDE_PANEL_ANIMATED_TRANSITION,
+                 useNativeDriver: true,
+             }),
+             Animated.timing(sidePanelTranslateX.current, {
+                 toValue: shouldHideSidePanel ? sidePanelWidth : 0,
+-                duration: CONST.ANIMATED_TRANSITION,
++                duration: CONST.SIDE_PANEL_ANIMATED_TRANSITION,
+                 useNativeDriver: true,
+             }),
+         ]).start(() => setIsSidePanelTransitionEnded(true));
+@@ -85,7 +85,7 @@ function SidePanelContextProvider({children}: PropsWithChildren) {
+             SidePanelActions.closeSidePanel(!isExtraLargeScreenWidth || shouldUpdateNarrow);
+ 
+             // Focus the composer after closing the Side Panel
+-            focusComposerWithDelay(ReportActionComposeFocusManager.composerRef.current, CONST.ANIMATED_TRANSITION + CONST.COMPOSER_FOCUS_DELAY)(true);
++            focusComposerWithDelay(ReportActionComposeFocusManager.composerRef.current, CONST.SIDE_PANEL_ANIMATED_TRANSITION + CONST.COMPOSER_FOCUS_DELAY)(true);
+         },
+         [isExtraLargeScreenWidth, sidePanelNVP],
+     );
+@@ -100,13 +100,21 @@ function SidePanelContextProvider({children}: PropsWithChildren) {
+             shouldHideToolTip,
+             sidePanelOffset,
+             sidePanelTranslateX,
+-            // Help panel is currently disabled. To open it manually, run:
+-            // Onyx.set('nvp_sidePanel', { open: true }) in the console.
+-            openSidePanel: () => {},
++            openSidePanel: () => SidePanelActions.openSidePanel(!isExtraLargeScreenWidth),
+             closeSidePanel,
+             sidePanelNVP,
+         }),
+-        [closeSidePanel, isSidePanelHiddenOrLargeScreen, isSidePanelTransitionEnded, shouldHideHelpButton, shouldHideSidePanel, shouldHideSidePanelBackdrop, shouldHideToolTip, sidePanelNVP],
++        [
++            closeSidePanel,
++            isExtraLargeScreenWidth,
++            isSidePanelHiddenOrLargeScreen,
++            isSidePanelTransitionEnded,
++            shouldHideHelpButton,
++            shouldHideSidePanel,
++            shouldHideSidePanelBackdrop,
++            shouldHideToolTip,
++            sidePanelNVP,
++        ],
+     );
+ 
+     return <SidePanelContext.Provider value={value}>{children}</SidePanelContext.Provider>;
+diff --git a/src/components/SidePanel/HelpModal/index.android.tsx b/src/components/SidePanel/SidePanelModal/index.android.tsx
+similarity index 76%
+rename from src/components/SidePanel/HelpModal/index.android.tsx
+rename to src/components/SidePanel/SidePanelModal/index.android.tsx
+index f7f4dd414e7d..3498260acf48 100644
+--- a/src/components/SidePanel/HelpModal/index.android.tsx
++++ b/src/components/SidePanel/SidePanelModal/index.android.tsx
+@@ -2,11 +2,10 @@ import {useFocusEffect} from '@react-navigation/native';
+ import React, {useCallback} from 'react';
+ import {BackHandler} from 'react-native';
+ import Modal from '@components/Modal';
+-import HelpContent from '@components/SidePanel/HelpComponents/HelpContent';
+ import CONST from '@src/CONST';
+-import type HelpProps from './types';
++import type SidePanelModalProps from './types';
+ 
+-function Help({shouldHideSidePanel, closeSidePanel}: HelpProps) {
++function SidePanelModal({shouldHideSidePanel, closeSidePanel, children}: SidePanelModalProps) {
+     // SidePanel isn't a native screen, this handles the back button press on Android
+     useFocusEffect(
+         useCallback(() => {
+@@ -27,11 +26,11 @@ function Help({shouldHideSidePanel, closeSidePanel}: HelpProps) {
+             type={CONST.MODAL.MODAL_TYPE.RIGHT_DOCKED}
+             shouldHandleNavigationBack
+         >
+-            <HelpContent closeSidePanel={closeSidePanel} />
++            {children}
+         </Modal>
+     );
+ }
+ 
+-Help.displayName = 'Help';
++SidePanelModal.displayName = 'SidePanelModal';
+ 
+-export default Help;
++export default SidePanelModal;
+diff --git a/src/components/SidePanel/HelpModal/index.ios.tsx b/src/components/SidePanel/SidePanelModal/index.ios.tsx
+similarity index 58%
+rename from src/components/SidePanel/HelpModal/index.ios.tsx
+rename to src/components/SidePanel/SidePanelModal/index.ios.tsx
+index 61d40751eabd..8a606df91666 100644
+--- a/src/components/SidePanel/HelpModal/index.ios.tsx
++++ b/src/components/SidePanel/SidePanelModal/index.ios.tsx
+@@ -1,10 +1,9 @@
+ import React from 'react';
+ import Modal from '@components/Modal';
+-import HelpContent from '@components/SidePanel/HelpComponents/HelpContent';
+ import CONST from '@src/CONST';
+-import type HelpProps from './types';
++import type SidePanelModalProps from './types';
+ 
+-function Help({shouldHideSidePanel, closeSidePanel}: HelpProps) {
++function SidePanelModal({shouldHideSidePanel, closeSidePanel, children}: SidePanelModalProps) {
+     return (
+         <Modal
+             onClose={() => closeSidePanel()}
+@@ -13,10 +12,10 @@ function Help({shouldHideSidePanel, closeSidePanel}: HelpProps) {
+             shouldHandleNavigationBack
+             swipeDirection={CONST.SWIPE_DIRECTION.RIGHT}
+         >
+-            <HelpContent closeSidePanel={closeSidePanel} />
++            {children}
+         </Modal>
+     );
+ }
+ 
+-Help.displayName = 'Help';
+-export default Help;
++SidePanelModal.displayName = 'SidePanelModal';
++export default SidePanelModal;
+diff --git a/src/components/SidePanel/HelpModal/index.tsx b/src/components/SidePanel/SidePanelModal/index.tsx
+similarity index 81%
+rename from src/components/SidePanel/HelpModal/index.tsx
+rename to src/components/SidePanel/SidePanelModal/index.tsx
+index 57bcf262261f..666daab287de 100644
+--- a/src/components/SidePanel/HelpModal/index.tsx
++++ b/src/components/SidePanel/SidePanelModal/index.tsx
+@@ -1,14 +1,14 @@
+ import {isRHPVisibleSelector} from '@selectors/Modal';
+-import React, {useEffect, useMemo} from 'react';
++import React, {useContext, useEffect, useMemo} from 'react';
+ // eslint-disable-next-line no-restricted-imports
+ import {Animated, View} from 'react-native';
+-// @ts-expect-error This is a workaround to display HelpPane on top of everything,
++// @ts-expect-error This is a workaround to display SidePanel on top of everything,
+ // Modal from react-native can't be used here, as it would block interactions with the rest of the app
+ import ModalPortal from 'react-native-web/dist/exports/Modal/ModalPortal';
+ import ColorSchemeWrapper from '@components/ColorSchemeWrapper';
+ import FocusTrapForModal from '@components/FocusTrap/FocusTrapForModal';
+-import HelpContent from '@components/SidePanel/HelpComponents/HelpContent';
+-import HelpOverlay from '@components/SidePanel/HelpComponents/HelpOverlay';
++import SidePanelOverlay from '@components/SidePanel/SidePanelOverlay';
++import {WideRHPContext} from '@components/WideRHPContextProvider';
+ import useKeyboardShortcut from '@hooks/useKeyboardShortcut';
+ import useOnyx from '@hooks/useOnyx';
+ import useResponsiveLayout from '@hooks/useResponsiveLayout';
+@@ -17,9 +17,9 @@ import useThemeStyles from '@hooks/useThemeStyles';
+ import ComposerFocusManager from '@libs/ComposerFocusManager';
+ import CONST from '@src/CONST';
+ import ONYXKEYS from '@src/ONYXKEYS';
+-import type HelpProps from './types';
++import type SidePanelModalProps from './types';
+ 
+-function Help({sidePanelTranslateX, closeSidePanel, shouldHideSidePanelBackdrop}: HelpProps) {
++function SidePanelModal({children, sidePanelTranslateX, closeSidePanel, shouldHideSidePanelBackdrop}: SidePanelModalProps) {
+     const styles = useThemeStyles();
+     const {isExtraLargeScreenWidth, shouldUseNarrowLayout} = useResponsiveLayout();
+     const {paddingTop, paddingBottom} = useSafeAreaPaddings();
+@@ -27,6 +27,9 @@ function Help({sidePanelTranslateX, closeSidePanel, shouldHideSidePanelBackdrop}
+     const [isRHPVisible = false] = useOnyx(ONYXKEYS.MODAL, {selector: isRHPVisibleSelector, canBeMissing: true});
+     const uniqueModalId = useMemo(() => ComposerFocusManager.getId(), []);
+ 
++    const {wideRHPRouteKeys, isWideRHPFocused} = useContext(WideRHPContext);
++    const isWideRHPVisible = !!wideRHPRouteKeys.length;
++
+     const onCloseSidePanelOnSmallScreens = () => {
+         if (isExtraLargeScreenWidth) {
+             return;
+@@ -60,9 +63,9 @@ function Help({sidePanelTranslateX, closeSidePanel, shouldHideSidePanelBackdrop}
+                 <View style={styles.sidePanelContainer}>
+                     <View>
+                         {!shouldHideSidePanelBackdrop && (
+-                            <HelpOverlay
++                            <SidePanelOverlay
+                                 onBackdropPress={closeSidePanel}
+-                                isRHPVisible={isRHPVisible}
++                                shouldBeVisible={isWideRHPVisible ? isWideRHPFocused : !isRHPVisible}
+                             />
+                         )}
+                     </View>
+@@ -75,7 +78,7 @@ function Help({sidePanelTranslateX, closeSidePanel, shouldHideSidePanelBackdrop}
+                                 {transform: [{translateX: sidePanelTranslateX.current}], paddingTop, paddingBottom},
+                             ]}
+                         >
+-                            <HelpContent closeSidePanel={closeSidePanel} />
++                            {children}
+                         </Animated.View>
+                     </ColorSchemeWrapper>
+                 </View>
+@@ -84,6 +87,6 @@ function Help({sidePanelTranslateX, closeSidePanel, shouldHideSidePanelBackdrop}
+     );
+ }
+ 
+-Help.displayName = 'Help';
++SidePanelModal.displayName = 'SidePanelModal';
+ 
+-export default Help;
++export default SidePanelModal;
+diff --git a/src/components/SidePanel/HelpModal/types.ts b/src/components/SidePanel/SidePanelModal/types.ts
+similarity index 55%
+rename from src/components/SidePanel/HelpModal/types.ts
+rename to src/components/SidePanel/SidePanelModal/types.ts
+index bde3aeebeb12..1aa245864fce 100644
+--- a/src/components/SidePanel/HelpModal/types.ts
++++ b/src/components/SidePanel/SidePanelModal/types.ts
+@@ -1,12 +1,13 @@
+-import type {MutableRefObject} from 'react';
++import type {ReactNode, RefObject} from 'react';
+ // eslint-disable-next-line no-restricted-imports
+ import type {Animated} from 'react-native';
+ 
+-type HelpProps = {
++type SidePanelModalProps = {
++    children: ReactNode;
+     shouldHideSidePanel: boolean;
+-    sidePanelTranslateX: MutableRefObject<Animated.Value>;
++    sidePanelTranslateX: RefObject<Animated.Value>;
+     shouldHideSidePanelBackdrop: boolean;
+     closeSidePanel: (shouldUpdateNarrow?: boolean) => void;
+ };
+ 
+-export default HelpProps;
++export default SidePanelModalProps;
+diff --git a/src/components/SidePanel/HelpComponents/HelpOverlay.tsx b/src/components/SidePanel/SidePanelOverlay.tsx
+similarity index 76%
+rename from src/components/SidePanel/HelpComponents/HelpOverlay.tsx
+rename to src/components/SidePanel/SidePanelOverlay.tsx
+index 805d2fe0edc0..93f5f8c98ca2 100644
+--- a/src/components/SidePanel/HelpComponents/HelpOverlay.tsx
++++ b/src/components/SidePanel/SidePanelOverlay.tsx
+@@ -6,15 +6,15 @@ import useLocalize from '@hooks/useLocalize';
+ import useThemeStyles from '@hooks/useThemeStyles';
+ import CONST from '@src/CONST';
+ 
+-type HelpOverlayProps = {
++type SidePanelOverlayProps = {
+     /** Whether the Side Panel is displayed over RHP */
+-    isRHPVisible: boolean;
++    shouldBeVisible: boolean;
+ 
+     /** Callback fired when pressing the backdrop */
+     onBackdropPress: () => void;
+ };
+ 
+-function HelpOverlay({isRHPVisible, onBackdropPress}: HelpOverlayProps) {
++function SidePanelOverlay({shouldBeVisible, onBackdropPress}: SidePanelOverlayProps) {
+     const styles = useThemeStyles();
+     const {translate} = useLocalize();
+ 
+@@ -24,9 +24,9 @@ function HelpOverlay({isRHPVisible, onBackdropPress}: HelpOverlayProps) {
+ 
+     return (
+         <Animated.View
+-            style={[styles.sidePanelOverlay, styles.sidePanelOverlayOpacity(isRHPVisible)]}
+-            entering={isRHPVisible ? undefined : CustomFadeIn}
+-            exiting={isRHPVisible ? undefined : CustomFadeOut}
++            style={[styles.sidePanelOverlay, styles.sidePanelOverlayOpacity(shouldBeVisible)]}
++            entering={shouldBeVisible ? CustomFadeIn : undefined}
++            exiting={shouldBeVisible ? CustomFadeOut : undefined}
+         >
+             <PressableWithoutFeedback
+                 accessible
+@@ -38,6 +38,6 @@ function HelpOverlay({isRHPVisible, onBackdropPress}: HelpOverlayProps) {
+     );
+ }
+ 
+-HelpOverlay.displayName = 'HelpOverlay';
++SidePanelOverlay.displayName = 'SidePanelOverlay';
+ 
+-export default HelpOverlay;
++export default SidePanelOverlay;
+diff --git a/src/components/SidePanel/index.tsx b/src/components/SidePanel/index.tsx
+index 403436f1b761..0f281c6f7151 100644
+--- a/src/components/SidePanel/index.tsx
++++ b/src/components/SidePanel/index.tsx
+@@ -1,9 +1,11 @@
+ import React from 'react';
+ import useSidePanel from '@hooks/useSidePanel';
+-import Help from './HelpModal';
++import type {ExtraContentProps} from '@libs/Navigation/PlatformStackNavigation/types';
++import Concierge from './Concierge';
++import SidePanelModal from './SidePanelModal';
+ import useSyncSidePanelWithHistory from './useSyncSidePanelWithHistory';
+ 
+-function SidePanel() {
++function SidePanel({navigation}: Pick<ExtraContentProps, 'navigation'>) {
+     const {sidePanelNVP, isSidePanelTransitionEnded, shouldHideSidePanel, sidePanelTranslateX, shouldHideSidePanelBackdrop, closeSidePanel} = useSidePanel();
+ 
+     // Hide side panel once animation ends
+@@ -22,12 +24,14 @@ function SidePanel() {
+     }
+ 
+     return (
+-        <Help
++        <SidePanelModal
+             shouldHideSidePanel={shouldHideSidePanel}
+             sidePanelTranslateX={sidePanelTranslateX}
+             closeSidePanel={closeSidePanel}
+             shouldHideSidePanelBackdrop={shouldHideSidePanelBackdrop}
+-        />
++        >
++            <Concierge navigation={navigation} />
++        </SidePanelModal>
+     );
+ }
+ 
+diff --git a/src/hooks/useSidePanelDisplayStatus.tsx b/src/hooks/useSidePanelDisplayStatus.tsx
+index ed9fdd5b18ff..09a2794df8a9 100644
+--- a/src/hooks/useSidePanelDisplayStatus.tsx
++++ b/src/hooks/useSidePanelDisplayStatus.tsx
+@@ -1,7 +1,5 @@
+-import {isModalCenteredVisibleSelector} from '@selectors/Modal';
+-import CONST from '@src/CONST';
+ import ONYXKEYS from '@src/ONYXKEYS';
+-import useLocalize from './useLocalize';
++import useEnvironment from './useEnvironment';
+ import useOnyx from './useOnyx';
+ import useResponsiveLayout from './useResponsiveLayout';
+ 
+@@ -10,28 +8,21 @@ import useResponsiveLayout from './useResponsiveLayout';
+  */
+ function useSidePanelDisplayStatus() {
+     const {isExtraLargeScreenWidth, shouldUseNarrowLayout} = useResponsiveLayout();
+-    const {preferredLocale} = useLocalize();
+     const [sidePanelNVP] = useOnyx(ONYXKEYS.NVP_SIDE_PANEL, {canBeMissing: true});
+-    const [isModalCenteredVisible = false] = useOnyx(ONYXKEYS.MODAL, {
+-        canBeMissing: true,
+-        selector: isModalCenteredVisibleSelector,
+-    });
++    const {isProduction} = useEnvironment();
+ 
+-    const isLanguageUnsupported = preferredLocale !== CONST.LOCALES.EN;
+     const isSidePanelVisible = isExtraLargeScreenWidth ? sidePanelNVP?.open : sidePanelNVP?.openNarrowScreen;
+ 
+     // The Side Panel is hidden when:
+     // - NVP is not set or it is false
+-    // - language is unsupported
+-    // - modal centered is visible
+-    const shouldHideSidePanel = !isSidePanelVisible || isLanguageUnsupported || isModalCenteredVisible || !sidePanelNVP;
+-    const isSidePanelHiddenOrLargeScreen = !isSidePanelVisible || isLanguageUnsupported || isExtraLargeScreenWidth || !sidePanelNVP;
++    // - Production environment (will be removed in the future once it's tested on staging)
++    const shouldHideSidePanel = !isSidePanelVisible || !sidePanelNVP || isProduction;
++    const isSidePanelHiddenOrLargeScreen = !isSidePanelVisible || isExtraLargeScreenWidth || isProduction || !sidePanelNVP;
+ 
+     // The help button is hidden when:
+-    // - side pane nvp is not set
+     // - Side Panel is displayed currently
+-    // - language is unsupported
+-    const shouldHideHelpButton = !sidePanelNVP || !shouldHideSidePanel || isLanguageUnsupported;
++    // - Production environment (will be removed in the future once it's tested on staging)
++    const shouldHideHelpButton = !shouldHideSidePanel || isProduction;
+     const shouldHideSidePanelBackdrop = shouldHideSidePanel || isExtraLargeScreenWidth || shouldUseNarrowLayout;
+ 
+     return {
+diff --git a/src/libs/Navigation/AppNavigator/Navigators/Overlay/BaseOverlay.tsx b/src/libs/Navigation/AppNavigator/Navigators/Overlay/BaseOverlay.tsx
+index 5356f59e620b..d69723e2abb8 100644
+--- a/src/libs/Navigation/AppNavigator/Navigators/Overlay/BaseOverlay.tsx
++++ b/src/libs/Navigation/AppNavigator/Navigators/Overlay/BaseOverlay.tsx
+@@ -17,10 +17,10 @@ type BaseOverlayProps = {
+     progress?: OverlayStylesParams;
+ 
+     /* Overlay position from the left edge of the container */
+-    positionLeftValue?: number | Animated.Value;
++    positionLeftValue?: number | Animated.Value | Animated.AnimatedAddition<number>;
+ 
+     /* Overlay position from the right edge of the container */
+-    positionRightValue?: number | Animated.Value;
++    positionRightValue?: number | Animated.Value | Animated.AnimatedAddition<number>;
+ };
+ 
+ // The default value of positionLeftValue is equal to -2 * variables.sideBarWidth, because we need to stretch the overlay to cover the sidebar and the translate animation distance.
+diff --git a/src/libs/Navigation/AppNavigator/Navigators/RightModalNavigator.tsx b/src/libs/Navigation/AppNavigator/Navigators/RightModalNavigator.tsx
+index 597293716f4b..ea18a5ac149c 100644
+--- a/src/libs/Navigation/AppNavigator/Navigators/RightModalNavigator.tsx
++++ b/src/libs/Navigation/AppNavigator/Navigators/RightModalNavigator.tsx
+@@ -7,6 +7,7 @@ import {Animated, DeviceEventEmitter, InteractionManager} from 'react-native';
+ import NoDropZone from '@components/DragAndDrop/NoDropZone';
+ import {animatedWideRHPWidth, expandedRHPProgress, innerRHPProgress, secondOverlayProgress, thirdOverlayProgress, WideRHPContext} from '@components/WideRHPContextProvider';
+ import useResponsiveLayout from '@hooks/useResponsiveLayout';
++import useSidePanel from '@hooks/useSidePanel';
+ import useThemeStyles from '@hooks/useThemeStyles';
+ import useWindowDimensions from '@hooks/useWindowDimensions';
+ import {abandonReviewDuplicateTransactions} from '@libs/actions/Transaction';
+@@ -46,6 +47,7 @@ function RightModalNavigator({navigation, route}: RightModalNavigatorProps) {
+     const {windowWidth} = useWindowDimensions();
+     const modalCardStyleInterpolator = useModalCardStyleInterpolator();
+     const styles = useThemeStyles();
++    const {sidePanelOffset} = useSidePanel();
+ 
+     const animatedWidth = expandedRHPProgress.interpolate({
+         inputRange: [0, 1, 2],
+@@ -345,21 +347,21 @@ function RightModalNavigator({navigation, route}: RightModalNavigatorProps) {
+                 {shouldRenderSecondaryOverlay && !shouldUseNarrowLayout && !isWideRHPFocused && !isWideRHPClosing && (
+                     <Overlay
+                         progress={secondOverlayProgress}
+-                        positionRightValue={variables.sideBarWidth}
++                        positionRightValue={Animated.add(sidePanelOffset.current, variables.sideBarWidth)}
+                         onPress={Navigation.dismissToFirstRHP}
+                     />
+                 )}
+                 {shouldRenderSecondaryOverlay && !shouldUseNarrowLayout && !!isWideRHPFocused && (
+                     <Overlay
+                         progress={secondOverlayProgress}
+-                        positionRightValue={animatedWideRHPWidth}
++                        positionRightValue={Animated.add(sidePanelOffset.current, animatedWideRHPWidth)}
+                         onPress={Navigation.dismissToFirstRHP}
+                     />
+                 )}
+                 {shouldRenderTertiaryOverlay && !shouldUseNarrowLayout && (
+                     <Overlay
+                         progress={thirdOverlayProgress}
+-                        positionRightValue={variables.sideBarWidth}
++                        positionRightValue={Animated.add(sidePanelOffset.current, variables.sideBarWidth)}
+                         onPress={Navigation.dismissToSecondRHP}
+                     />
+                 )}
+diff --git a/src/libs/Navigation/AppNavigator/useModalCardStyleInterpolator.ts b/src/libs/Navigation/AppNavigator/useModalCardStyleInterpolator.ts
+index a6394cdc9e2a..781e2c7e565a 100644
+--- a/src/libs/Navigation/AppNavigator/useModalCardStyleInterpolator.ts
++++ b/src/libs/Navigation/AppNavigator/useModalCardStyleInterpolator.ts
+@@ -22,7 +22,7 @@ type ModalCardStyleInterpolator = (props: ModalCardStyleInterpolatorProps) => St
+ const useModalCardStyleInterpolator = (): ModalCardStyleInterpolator => {
+     const {shouldUseNarrowLayout, onboardingIsMediumOrLargerScreenWidth} = useResponsiveLayout();
+     const StyleUtils = useStyleUtils();
+-    const {sidePanelOffset} = useSidePanel();
++    const {sidePanelOffset, sidePanelNVP, isSidePanelTransitionEnded} = useSidePanel();
+ 
+     const modalCardStyleInterpolator: ModalCardStyleInterpolator = ({
+         props: {
+@@ -57,7 +57,12 @@ const useModalCardStyleInterpolator = (): ModalCardStyleInterpolator => {
+ 
+         const cardStyle = StyleUtils.getCardStyles(screen.width);
+ 
+-        if (animationEnabled && (!isFullScreenModal || shouldUseNarrowLayout)) {
++        // Screen should animate if:
++        // 1. The animation is enabled
++        // 2. The modal is not a full screen on wide layout
++        // 3. The side panel transition is in progress on narrow layout
++        const shouldAnimate = animationEnabled && (!isFullScreenModal || shouldUseNarrowLayout) && (isSidePanelTransitionEnded || !!sidePanelNVP?.openNarrowScreen || !shouldUseNarrowLayout);
++        if (shouldAnimate) {
+             cardStyle.transform = [{translateX}];
+         }
+ 
+diff --git a/src/libs/Navigation/Navigation.ts b/src/libs/Navigation/Navigation.ts
+index 46b717d0302f..e90867336ecc 100644
+--- a/src/libs/Navigation/Navigation.ts
++++ b/src/libs/Navigation/Navigation.ts
+@@ -9,6 +9,7 @@ import type {OnyxEntry} from 'react-native-onyx';
+ import Onyx from 'react-native-onyx';
+ import type {Writable} from 'type-fest';
+ import {SUPER_WIDE_RIGHT_MODALS, WIDE_RIGHT_MODALS} from '@components/WideRHPContextProvider';
++import SidePanelActions from '@libs/actions/SidePanel';
+ import getIsNarrowLayout from '@libs/getIsNarrowLayout';
+ import Log from '@libs/Log';
+ import {shallowCompare} from '@libs/ObjectUtils';
+@@ -19,7 +20,7 @@ import ONYXKEYS from '@src/ONYXKEYS';
+ import type {Route} from '@src/ROUTES';
+ import ROUTES from '@src/ROUTES';
+ import SCREENS, {PROTECTED_SCREENS} from '@src/SCREENS';
+-import type {Account} from '@src/types/onyx';
++import type {Account, SidePanel} from '@src/types/onyx';
+ import getInitialSplitNavigatorState from './AppNavigator/createSplitNavigator/getInitialSplitNavigatorState';
+ import originalCloseRHPFlow from './helpers/closeRHPFlow';
+ import getStateFromPath from './helpers/getStateFromPath';
+@@ -54,6 +55,16 @@ Onyx.connectWithoutView({
+     },
+ });
+ 
++let sidePanelNVP: OnyxEntry<SidePanel>;
++// `connectWithoutView` is used here because we want to avoid unnecessary re-renders when the side panel NVP changes
++// Also it is not directly connected to any UI
++Onyx.connectWithoutView({
++    key: ONYXKEYS.NVP_SIDE_PANEL,
++    callback: (value) => {
++        sidePanelNVP = value;
++    },
++});
++
+ function shouldShowRequire2FAPage() {
+     return !!account?.needsTwoFactorAuthSetup && !account?.requiresTwoFactorAuth;
+ }
+@@ -119,6 +130,17 @@ const getTopmostReportActionId = (state = navigationRef.getState()) => getTopmos
+  */
+ const closeRHPFlow = (ref = navigationRef) => originalCloseRHPFlow(ref);
+ 
++/**
++ * Close the side panel on narrow layout when navigating to a different screen.
++ */
++function closeSidePanelOnNarrowScreen() {
++    const isNarrowLayout = getIsNarrowLayout();
++    if (!sidePanelNVP?.openNarrowScreen || !isNarrowLayout) {
++        return;
++    }
++    SidePanelActions.closeSidePanel(true);
++}
++
+ /**
+  * Returns the current active route.
+  */
+@@ -222,6 +244,7 @@ function navigate(route: Route, options?: LinkToOptions) {
+     }
+ 
+     linkTo(navigationRef.current, route, options);
++    closeSidePanelOnNarrowScreen();
+ }
+ 
+ /**
+diff --git a/src/libs/Navigation/PlatformStackNavigation/types/NavigatorComponent.ts b/src/libs/Navigation/PlatformStackNavigation/types/NavigatorComponent.ts
+index 7ecf143f5a33..87d8141437a5 100644
+--- a/src/libs/Navigation/PlatformStackNavigation/types/NavigatorComponent.ts
++++ b/src/libs/Navigation/PlatformStackNavigation/types/NavigatorComponent.ts
+@@ -58,4 +58,4 @@ type CreatePlatformStackNavigatorComponentOptions<RouterOptions extends Platform
+     NavigationContentWrapper?: NavigationContentWrapper;
+ };
+ 
+-export type {CustomCodeProps, CustomStateHookProps, CustomEffectsHookProps, CreatePlatformStackNavigatorComponentOptions};
++export type {CustomCodeProps, CustomStateHookProps, CustomEffectsHookProps, CreatePlatformStackNavigatorComponentOptions, ExtraContentProps};
+diff --git a/src/libs/actions/SidePanel.ts b/src/libs/actions/SidePanel.ts
+index 97597d5f8566..2a7d78b83899 100644
+--- a/src/libs/actions/SidePanel.ts
++++ b/src/libs/actions/SidePanel.ts
+@@ -1,8 +1,4 @@
+-import type {OnyxUpdate} from 'react-native-onyx';
+ import Onyx from 'react-native-onyx';
+-import * as API from '@libs/API';
+-import type {CloseSidePanelParams, OpenSidePanelParams} from '@libs/API/parameters';
+-import {WRITE_COMMANDS} from '@libs/API/types';
+ import ONYXKEYS from '@src/ONYXKEYS';
+ 
+ /**
+@@ -11,17 +7,7 @@ import ONYXKEYS from '@src/ONYXKEYS';
+  * @param shouldOpenOnNarrowScreen - Whether to open the side panel on narrow screen
+  */
+ function openSidePanel(shouldOpenOnNarrowScreen: boolean) {
+-    const optimisticData: OnyxUpdate[] = [
+-        {
+-            key: ONYXKEYS.NVP_SIDE_PANEL,
+-            onyxMethod: Onyx.METHOD.MERGE,
+-            value: shouldOpenOnNarrowScreen ? {open: true, openNarrowScreen: true} : {open: true},
+-        },
+-    ];
+-
+-    const params: OpenSidePanelParams = {isNarrowScreen: shouldOpenOnNarrowScreen};
+-
+-    API.write(WRITE_COMMANDS.OPEN_SIDE_PANEL, params, {optimisticData});
++    Onyx.merge(ONYXKEYS.NVP_SIDE_PANEL, shouldOpenOnNarrowScreen ? {open: true, openNarrowScreen: true} : {open: true});
+ }
+ 
+ /**
+@@ -30,17 +16,7 @@ function openSidePanel(shouldOpenOnNarrowScreen: boolean) {
+  * @param shouldCloseOnNarrowScreen - Whether to close the side panel on narrow screen
+  */
+ function closeSidePanel(shouldCloseOnNarrowScreen: boolean) {
+-    const optimisticData: OnyxUpdate[] = [
+-        {
+-            key: ONYXKEYS.NVP_SIDE_PANEL,
+-            onyxMethod: Onyx.METHOD.MERGE,
+-            value: shouldCloseOnNarrowScreen ? {openNarrowScreen: false} : {open: false},
+-        },
+-    ];
+-
+-    const params: CloseSidePanelParams = {isNarrowScreen: shouldCloseOnNarrowScreen};
+-
+-    API.write(WRITE_COMMANDS.CLOSE_SIDE_PANEL, params, {optimisticData});
++    Onyx.merge(ONYXKEYS.NVP_SIDE_PANEL, shouldCloseOnNarrowScreen ? {openNarrowScreen: false} : {open: false});
+ }
+ 
+ export default {openSidePanel, closeSidePanel};
+diff --git a/src/libs/calculateAnchorPosition.ts b/src/libs/calculateAnchorPosition.ts
+index bee34c1c1e96..90766f4582ba 100644
+--- a/src/libs/calculateAnchorPosition.ts
++++ b/src/libs/calculateAnchorPosition.ts
+@@ -6,7 +6,7 @@ import type {AnchorOrigin} from './actions/EmojiPickerAction';
+ /**
+  * Gets the x,y position of the passed in component for the purpose of anchoring another component to it.
+  */
+-export default function calculateAnchorPosition(anchorComponent: ContextMenuAnchor, anchorOrigin?: AnchorOrigin): Promise<AnchorPosition & AnchorDimensions> {
++export default function calculateAnchorPosition(anchorComponent: ContextMenuAnchor, anchorOrigin?: Partial<AnchorOrigin>): Promise<AnchorPosition & AnchorDimensions> {
+     return new Promise((resolve) => {
+         if (!anchorComponent || !('measureInWindow' in anchorComponent)) {
+             resolve({horizontal: 0, vertical: 0, width: 0, height: 0});
+diff --git a/src/pages/home/HeaderView.tsx b/src/pages/home/HeaderView.tsx
+index 0e5aa6525958..1ae91a9eadb4 100644
+--- a/src/pages/home/HeaderView.tsx
++++ b/src/pages/home/HeaderView.tsx
+@@ -18,7 +18,7 @@ import PressableWithoutFeedback from '@components/Pressable/PressableWithoutFeed
+ import ReportActionAvatars from '@components/ReportActionAvatars';
+ import ReportHeaderSkeletonView from '@components/ReportHeaderSkeletonView';
+ import SearchButton from '@components/Search/SearchRouter/SearchButton';
+-import HelpButton from '@components/SidePanel/HelpComponents/HelpButton';
++import SidePanelButton from '@components/SidePanel/SidePanelButton';
+ import TaskHeaderActionButton from '@components/TaskHeaderActionButton';
+ import Text from '@components/Text';
+ import Tooltip from '@components/Tooltip';
+@@ -97,9 +97,12 @@ type HeaderViewProps = {
+ 
+     /** Whether we should display the header as in narrow layout */
+     shouldUseNarrowLayout?: boolean;
++
++    /** Whether the header view is being displayed in the side panel */
++    isInSidePanel?: boolean;
+ };
+ 
+-function HeaderView({report, parentReportAction, onNavigationMenuButtonClicked, shouldUseNarrowLayout = false}: HeaderViewProps) {
++function HeaderView({report, parentReportAction, onNavigationMenuButtonClicked, shouldUseNarrowLayout = false, isInSidePanel}: HeaderViewProps) {
+     // eslint-disable-next-line rulesdir/prefer-shouldUseNarrowLayout-instead-of-isSmallScreenWidth
+     const {isSmallScreenWidth} = useResponsiveLayout();
+     const route = useRoute();
+@@ -227,7 +230,7 @@ function HeaderView({report, parentReportAction, onNavigationMenuButtonClicked,
+     const isParentReportLoading = !!report?.parentReportID && !parentReport;
+ 
+     const isReportInRHP = route.name === SCREENS.SEARCH.REPORT_RHP;
+-    const shouldDisplaySearchRouter = !isReportInRHP || isSmallScreenWidth;
++    const shouldDisplaySearchRouter = !isInSidePanel && (!isReportInRHP || isSmallScreenWidth);
+     const [onboardingPurposeSelected] = useOnyx(ONYXKEYS.ONBOARDING_PURPOSE_SELECTED, {canBeMissing: true});
+     const isChatUsedForOnboarding = isChatUsedForOnboardingReportUtils(report, onboardingPurposeSelected);
+     const shouldShowRegisterForWebinar = introSelected?.companySize === CONST.ONBOARDING_COMPANY_SIZE.MICRO && (isChatUsedForOnboarding || (isAdminRoom(report) && !isChatThread));
+@@ -235,6 +238,7 @@ function HeaderView({report, parentReportAction, onNavigationMenuButtonClicked,
+     const shouldShowEarlyDiscountBanner = shouldShowDiscount && isChatUsedForOnboarding;
+     const latestScheduledCall = reportNameValuePairs?.calendlyCalls?.at(-1);
+     const hasActiveScheduledCall = latestScheduledCall && !isPast(latestScheduledCall.eventTime) && latestScheduledCall.status !== CONST.SCHEDULE_CALL_STATUS.CANCELLED;
++    const shouldShowBackButton = shouldUseNarrowLayout || !!isInSidePanel;
+ 
+     const onboardingHelpDropdownButton = (
+         <OnboardingHelpDropdownButton
+@@ -265,10 +269,10 @@ function HeaderView({report, parentReportAction, onNavigationMenuButtonClicked,
+                         <ReportHeaderSkeletonView onBackButtonPress={onNavigationMenuButtonClicked} />
+                     ) : (
+                         <View style={[styles.appContentHeaderTitle, !shouldUseNarrowLayout && !isLoading && styles.pl5]}>
+-                            {shouldUseNarrowLayout && (
++                            {shouldShowBackButton && (
+                                 <PressableWithoutFeedback
+                                     onPress={onNavigationMenuButtonClicked}
+-                                    style={styles.LHNToggle}
++                                    style={[styles.LHNToggle, shouldUseNarrowLayout && styles.pl5]}
+                                     accessibilityHint={translate('accessibilityHints.navigateToChatsList')}
+                                     accessibilityLabel={translate('common.back')}
+                                     role={CONST.ROLE.BUTTON}
+@@ -370,7 +374,7 @@ function HeaderView({report, parentReportAction, onNavigationMenuButtonClicked,
+                                     {!shouldUseNarrowLayout && isOpenTaskReport(report, parentReportAction) && <TaskHeaderActionButton report={report} />}
+                                     {!isParentReportLoading && canJoin && !shouldUseNarrowLayout && joinButton}
+                                 </View>
+-                                <HelpButton style={styles.ml2} />
++                                {!isInSidePanel && <SidePanelButton style={styles.ml2} />}
+                                 {shouldDisplaySearchRouter && <SearchButton />}
+                             </View>
+                             <ConfirmModal
+diff --git a/src/pages/home/ReportScreen.tsx b/src/pages/home/ReportScreen.tsx
+index 2cad7de04660..3cdfe4ec574e 100644
+--- a/src/pages/home/ReportScreen.tsx
++++ b/src/pages/home/ReportScreen.tsx
+@@ -37,6 +37,7 @@ import usePermissions from '@hooks/usePermissions';
+ import usePrevious from '@hooks/usePrevious';
+ import useReportIsArchived from '@hooks/useReportIsArchived';
+ import useResponsiveLayout from '@hooks/useResponsiveLayout';
++import useSidePanel from '@hooks/useSidePanel';
+ import useThemeStyles from '@hooks/useThemeStyles';
+ import useTransactionsAndViolationsForReport from '@hooks/useTransactionsAndViolationsForReport';
+ import useViewportOffsetTop from '@hooks/useViewportOffsetTop';
+@@ -117,7 +118,10 @@ type ReportScreenNavigationProps =
+     | PlatformStackScreenProps<ReportsSplitNavigatorParamList, typeof SCREENS.REPORT>
+     | PlatformStackScreenProps<SearchReportParamList, typeof SCREENS.SEARCH.REPORT_RHP>;
+ 
+-type ReportScreenProps = ReportScreenNavigationProps;
++type ReportScreenProps = ReportScreenNavigationProps & {
++    /** Whether the report screen is being displayed in the side panel */
++    isInSidePanel?: boolean;
++};
+ 
+ const defaultReportMetadata = {
+     hasOnceLoadedReportActions: false,
+@@ -150,7 +154,7 @@ function isEmpty(report: OnyxEntry<OnyxTypes.Report>): boolean {
+     return !Object.values(report).some((value) => value !== undefined && value !== '');
+ }
+ 
+-function ReportScreen({route, navigation}: ReportScreenProps) {
++function ReportScreen({route, navigation, isInSidePanel = false}: ReportScreenProps) {
+     const styles = useThemeStyles();
+     const expensifyIcons = useMemoizedLazyExpensifyIcons(['Lightbulb'] as const);
+     const {translate} = useLocalize();
+@@ -354,6 +358,8 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
+ 
+     const newTransactions = useNewTransactions(reportMetadata?.hasOnceLoadedReportActions, reportTransactions);
+ 
++    const {closeSidePanel} = useSidePanel();
++
+     useEffect(() => {
+         if (!prevIsFocused || isFocused) {
+             return;
+@@ -372,6 +378,11 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
+     const backTo = route?.params?.backTo as string;
+     const onBackButtonPress = useCallback(
+         (prioritizeBackTo = false) => {
++            if (isInSidePanel) {
++                closeSidePanel();
++                return;
++            }
++
+             if (backTo === SCREENS.SEARCH.REPORT_RHP) {
+                 Navigation.goBack();
+                 return;
+@@ -394,7 +405,7 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
+             }
+             Navigation.goBack();
+         },
+-        [isInNarrowPaneModal, backTo],
++        [isInSidePanel, backTo, isInNarrowPaneModal, closeSidePanel],
+     );
+ 
+     let headerView = (
+@@ -404,6 +415,7 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
+             report={report}
+             parentReportAction={parentReportAction}
+             shouldUseNarrowLayout={shouldUseNarrowLayout}
++            isInSidePanel={isInSidePanel}
+         />
+     );
+ 
+diff --git a/src/pages/home/report/ReportActionCompose/AttachmentPickerWithMenuItems.tsx b/src/pages/home/report/ReportActionCompose/AttachmentPickerWithMenuItems.tsx
+index 713005358853..a99b282e6649 100644
+--- a/src/pages/home/report/ReportActionCompose/AttachmentPickerWithMenuItems.tsx
++++ b/src/pages/home/report/ReportActionCompose/AttachmentPickerWithMenuItems.tsx
+@@ -1,6 +1,6 @@
+ import {useIsFocused} from '@react-navigation/native';
+ import {accountIDSelector} from '@selectors/Session';
+-import React, {useCallback, useContext, useEffect, useMemo, useRef} from 'react';
++import React, {useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
+ import {View} from 'react-native';
+ import type {OnyxEntry} from 'react-native-onyx';
+ import AttachmentPicker from '@components/AttachmentPicker';
+@@ -19,13 +19,13 @@ import {useMemoizedLazyExpensifyIcons} from '@hooks/useLazyAsset';
+ import useLocalize from '@hooks/useLocalize';
+ import useOnyx from '@hooks/useOnyx';
+ import usePermissions from '@hooks/usePermissions';
++import usePopoverPosition from '@hooks/usePopoverPosition';
+ import usePreferredPolicy from '@hooks/usePreferredPolicy';
+ import usePrevious from '@hooks/usePrevious';
+ import useReportIsArchived from '@hooks/useReportIsArchived';
+ import useResponsiveLayout from '@hooks/useResponsiveLayout';
+ import useTheme from '@hooks/useTheme';
+ import useThemeStyles from '@hooks/useThemeStyles';
+-import useWindowDimensions from '@hooks/useWindowDimensions';
+ import {isSafari} from '@libs/Browser';
+ import getIconForAction from '@libs/getIconForAction';
+ import Navigation from '@libs/Navigation/Navigation';
+@@ -49,6 +49,7 @@ import type {IOUType} from '@src/CONST';
+ import CONST from '@src/CONST';
+ import ONYXKEYS from '@src/ONYXKEYS';
+ import ROUTES from '@src/ROUTES';
++import type {AnchorPosition} from '@src/styles';
+ import type * as OnyxTypes from '@src/types/onyx';
+ import type {FileObject} from '@src/types/utils/Attachment';
+ import getEmptyArray from '@src/types/utils/getEmptyArray';
+@@ -142,8 +143,9 @@ function AttachmentPickerWithMenuItems({
+     const theme = useTheme();
+     const styles = useThemeStyles();
+     const {translate} = useLocalize();
+-    const {windowHeight, windowWidth} = useWindowDimensions();
+     const {shouldUseNarrowLayout} = useResponsiveLayout();
++    const {calculatePopoverPosition} = usePopoverPosition();
++    const [popoverAnchorPosition, setPopoverAnchorPosition] = useState<AnchorPosition | null>(null);
+     const {isDelegateAccessRestricted, showDelegateNoAccessModal} = useContext(DelegateNoAccessContext);
+     const [policy] = useOnyx(`${ONYXKEYS.COLLECTION.POLICY}${report?.policyID}`, {canBeMissing: true});
+     const [lastDistanceExpenseType] = useOnyx(ONYXKEYS.NVP_LAST_DISTANCE_EXPENSE_TYPE, {canBeMissing: true});
+@@ -342,6 +344,20 @@ function AttachmentPickerWithMenuItems({
+         setMenuVisibility(false);
+     }, [didScreenBecomeInactive, isMenuVisible, setMenuVisibility]);
+ 
++    // Calculate anchor position when menu becomes visible
++    useEffect(() => {
++        if (!actionButtonRef.current || !isMenuVisible) {
++            return;
++        }
++
++        calculatePopoverPosition(actionButtonRef as React.RefObject<View>, {
++            horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.LEFT,
++            vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.BOTTOM,
++        }).then((position) => {
++            setPopoverAnchorPosition({...position, vertical: position.vertical - CONST.MODAL.POPOVER_MENU_PADDING});
++        });
++    }, [isMenuVisible, calculatePopoverPosition, actionButtonRef]);
++
+     // 1. Limit the container width to a single column.
+     const outerContainerStyles = [{flexBasis: styles.composerSizeButton.width + styles.composerSizeButton.marginHorizontal * 2}, styles.flexGrow0, styles.flexShrink0];
+ 
+@@ -504,7 +520,7 @@ function AttachmentPickerWithMenuItems({
+                                     });
+                                 }
+                             }}
+-                            anchorPosition={styles.createMenuPositionReportActionCompose(shouldUseNarrowLayout, windowHeight, windowWidth)}
++                            anchorPosition={popoverAnchorPosition ?? {horizontal: 0, vertical: 0}}
+                             anchorAlignment={{
+                                 horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.LEFT,
+                                 vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.BOTTOM,
+diff --git a/src/selectors/Modal.ts b/src/selectors/Modal.ts
+index 7fdc8f5bea8c..b9b13fa794d4 100644
+--- a/src/selectors/Modal.ts
++++ b/src/selectors/Modal.ts
+@@ -6,10 +6,4 @@ const willAlertModalBecomeVisibleSelector = (modal: OnyxEntry<Modal>) => modal?.
+ 
+ const isRHPVisibleSelector = (modal: OnyxEntry<Modal>) => modal?.type === CONST.MODAL.MODAL_TYPE.RIGHT_DOCKED;
+ 
+-const isModalCenteredVisibleSelector = (modal: OnyxEntry<Modal>) =>
+-    modal?.type === CONST.MODAL.MODAL_TYPE.CENTERED_SWIPEABLE_TO_RIGHT ||
+-    modal?.type === CONST.MODAL.MODAL_TYPE.CENTERED_UNSWIPEABLE ||
+-    modal?.type === CONST.MODAL.MODAL_TYPE.CENTERED_SMALL ||
+-    modal?.type === CONST.MODAL.MODAL_TYPE.CENTERED;
+-
+-export {willAlertModalBecomeVisibleSelector, isRHPVisibleSelector, isModalCenteredVisibleSelector};
++export {willAlertModalBecomeVisibleSelector, isRHPVisibleSelector};
+diff --git a/src/styles/index.ts b/src/styles/index.ts
+index 9f67829dab3e..739c94f07c0b 100644
+--- a/src/styles/index.ts
++++ b/src/styles/index.ts
+@@ -32,7 +32,6 @@ import editedLabelStyles from './utils/editedLabelStyles';
+ import emojiDefaultStyles from './utils/emojiDefaultStyles';
+ import flex from './utils/flex';
+ import FontUtils from './utils/FontUtils';
+-import getPopOverVerticalOffset from './utils/getPopOverVerticalOffset';
+ import objectFit from './utils/objectFit';
+ import optionAlternateTextPlatformStyles from './utils/optionAlternateTextPlatformStyles';
+ import overflow from './utils/overflow';
+@@ -1897,7 +1896,6 @@ const staticStyles = (theme: ThemeColors) =>
+             height: variables.contentHeaderHeight,
+             justifyContent: 'center',
+             paddingRight: 10,
+-            paddingLeft: 20,
+         },
+ 
+         chatContentScrollView: {
+@@ -5251,8 +5249,8 @@ const staticStyles = (theme: ThemeColors) =>
+             padding: 16,
+         },
+ 
+-        // We have to use 10000 here as sidePanel has to be displayed on top of modals which have z-index of 9999
+-        sidePanelContainer: {zIndex: 10000},
++        // We have to use 9998 here as sidePanel has to be displayed right under popovers which have z-index of 9999
++        sidePanelContainer: {zIndex: variables.sidePanelZIndex},
+ 
+         reportPreviewArrowButton: {
+             borderRadius: 50,
+@@ -5663,27 +5661,14 @@ const dynamicStyles = (theme: ThemeColors) =>
+                 vertical: windowHeight - (variables.fabBottom + variables.componentSizeNormal + 12),
+             }) satisfies AnchorPosition,
+ 
+-        createAccountMenuPositionProfile: () =>
+-            ({
+-                horizontal: 18,
+-                ...getPopOverVerticalOffset(202 + 40),
+-            }) satisfies AnchorPosition,
+-
+-        createMenuPositionReportActionCompose: (shouldUseNarrowLayout: boolean, windowHeight: number, windowWidth: number) =>
+-            ({
+-                // On a narrow layout the menu is displayed in ReportScreen in RHP, so it must be moved from the right side of the screen
+-                horizontal: (shouldUseNarrowLayout ? windowWidth - variables.sideBarWithLHBWidth : variables.sideBarWithLHBWidth + variables.navigationTabBarSize) + 18,
+-                vertical: windowHeight - CONST.MENU_POSITION_REPORT_ACTION_COMPOSE_BOTTOM,
+-            }) satisfies AnchorPosition,
+-
+         overlayStyles: ({
+             progress,
+             positionLeftValue,
+             positionRightValue,
+         }: {
+             progress: OverlayStylesParams;
+-            positionLeftValue: number | Animated.Value;
+-            positionRightValue: number | Animated.Value;
++            positionLeftValue: number | Animated.Value | Animated.AnimatedAddition<number>;
++            positionRightValue: number | Animated.Value | Animated.AnimatedAddition<number>;
+         }) =>
+             ({
+                 // We need to stretch the overlay to cover the sidebar and the translate animation distance.
+@@ -5858,10 +5843,10 @@ const dynamicStyles = (theme: ThemeColors) =>
+             }) satisfies ViewStyle,
+ 
+         sidePanelOverlayOpacity: (isOverlayVisible: boolean) => ({
+-            opacity: isOverlayVisible ? 0 : variables.overlayOpacity,
++            opacity: isOverlayVisible ? variables.overlayOpacity : 0,
+         }),
+         sidePanelContentWidth: (shouldUseNarrowLayout: boolean): ViewStyle => ({
+-            width: shouldUseNarrowLayout ? '100%' : variables.sideBarWidth,
++            width: shouldUseNarrowLayout ? '100%' : variables.sidePanelWidth,
+         }),
+         sidePanelContentBorderWidth: (isExtraLargeScreenWidth: boolean): ViewStyle => ({
+             borderLeftWidth: isExtraLargeScreenWidth ? 1 : 0,
+diff --git a/src/styles/utils/generators/ModalStyleUtils.ts b/src/styles/utils/generators/ModalStyleUtils.ts
+index 03b61e28b485..baa2bbb7faba 100644
+--- a/src/styles/utils/generators/ModalStyleUtils.ts
++++ b/src/styles/utils/generators/ModalStyleUtils.ts
+@@ -66,6 +66,7 @@ const createModalStyleUtils: StyleUtilGenerator<GetModalStylesStyleUtil> = ({the
+         let modalStyle: GetModalStyles['modalStyle'] = {
+             margin: 0,
+             ...outerStyle,
++            zIndex: variables.modalBaseZIndex,
+         };
+ 
+         let modalContainerStyle: GetModalStyles['modalContainerStyle'];
+@@ -276,6 +277,7 @@ const createModalStyleUtils: StyleUtilGenerator<GetModalStylesStyleUtil> = ({the
+                     flexDirection: 'row',
+                     justifyContent: 'flex-end',
+                     height: '100%',
++                    zIndex: variables.modalRightDockedZIndex,
+                 };
+                 modalContainerStyle = {
+                     width: isSmallScreenWidth ? '100%' : variables.sideBarWidth,
+diff --git a/src/styles/variables.ts b/src/styles/variables.ts
+index 49e33bcd2101..bf9e29ab26b5 100644
+--- a/src/styles/variables.ts
++++ b/src/styles/variables.ts
+@@ -102,6 +102,7 @@ export default {
+     iosSafeAreaInsetsPercentage: 0.7,
+     androidSafeAreaInsetsPercentage: 1,
+     sideBarWidth: 375,
++    sidePanelWidth: 375,
+     receiptPaneRHPMaxWidth: 465,
+     superWideRHPMaxWidth: 1260,
+     minScanTooltipWidth: 320,
+@@ -222,6 +223,9 @@ export default {
+     reportActionImagesDoubleImageHeight: 138,
+     reportActionImagesMultipleImageHeight: 110,
+     reportActionItemImagesMoreCornerTriangleWidth: 40,
++    modalBaseZIndex: 9999,
++    sidePanelZIndex: 9998,
++    modalRightDockedZIndex: 9997,
+     popoverZIndex: 10000,
+     workspaceTypeIconWidth: 34,
+     sectionMargin: 16,
