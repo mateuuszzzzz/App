@@ -253,11 +253,22 @@ jobs:
           cd node_modules/react-native/.build/output/xcframeworks/${{ matrix.flavor }}
           tar -czf reactnative-core-${{ matrix.flavor == 'Debug' && 'debug' || 'release' }}.tar.gz React.xcframework
 
+      - name: Compress and rename dSYM
+        run: |
+          cd node_modules/react-native/.build/output/xcframeworks/${{ matrix.flavor }}/Symbols
+          tar -czf ../reactnative-core-dSYM-${{ matrix.flavor == 'Debug' && 'debug' || 'release' }}.tar.gz .
+
       - name: Upload XCFramework artifact
         uses: actions/upload-artifact@v4
         with:
           name: reactnative-core-${{ matrix.flavor == 'Debug' && 'debug' || 'release' }}-${{ matrix.is_hybrid }}
           path: node_modules/react-native/.build/output/xcframeworks/${{ matrix.flavor }}/reactnative-core-${{ matrix.flavor == 'Debug' && 'debug' || 'release' }}.tar.gz
+
+      - name: Upload dSYM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reactnative-core-dSYM-${{ matrix.flavor == 'Debug' && 'debug' || 'release' }}-${{ matrix.is_hybrid }}
+          path: node_modules/react-native/.build/output/xcframeworks/${{ matrix.flavor }}/reactnative-core-dSYM-${{ matrix.flavor == 'Debug' && 'debug' || 'release' }}.tar.gz
 
   publishReactNativeiOSArtifacts:
     name: Publish React Native iOS Artifacts

@@ -19,6 +19,18 @@ def coreReleaseArtifact = artifacts.add('iosArtifacts', file("${artifactsDir}/re
     classifier = 'reactnative-core-release'
 }
 
+def coreDsymDebugArtifact = artifacts.add('iosArtifacts', file("${artifactsDir}/reactnative-core-dSYM-debug.tar.gz")) {
+    type = 'tgz'
+    extension = 'tar.gz'
+    classifier = 'reactnative-core-dSYM-debug'
+}
+
+def coreDsymReleaseArtifact = artifacts.add('iosArtifacts', file("${artifactsDir}/reactnative-core-dSYM-release.tar.gz")) {
+    type = 'tgz'
+    extension = 'tar.gz'
+    classifier = 'reactnative-core-dSYM-release'
+}
+
 publishing {
     publications {
         release(MavenPublication) {
@@ -28,6 +40,8 @@ publishing {
 
             artifact(coreDebugArtifact)
             artifact(coreReleaseArtifact)
+            artifact(coreDsymDebugArtifact)
+            artifact(coreDsymReleaseArtifact)
 
             pom {
                 name = 'react-native-artifacts'

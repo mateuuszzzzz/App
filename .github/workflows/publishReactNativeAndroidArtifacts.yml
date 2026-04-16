@@ -169,6 +169,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           IS_HYBRID_BUILD: ${{ matrix.is_hybrid }}
+          ARTIFACT_ID: react-android
 
       - name: Build and publish React Native artifacts
         working-directory: ${{ matrix.is_hybrid == 'true' && 'Mobile-Expensify/Android' || 'android' }}
