@@ -152,6 +152,10 @@ jobs:
         with:
           IS_HYBRID_BUILD: ${{ matrix.is_hybrid }}
 
+      - name: Resolve Hermes version
+        id: hermes
+        run: echo "VERSION=$(sed 's/^hermes-v\{0,1\}//' node_modules/react-native/sdks/.hermesversion)" >> "$GITHUB_OUTPUT"
+
       # ios-prebuild scripts and Package.swift are not included in the npm tarball, fetch from upstream git tag
       - name: Fetch prebuild files from upstream RN
         run: |
@@ -170,6 +174,8 @@ jobs:
       - name: Setup prebuild workspace
         working-directory: node_modules/react-native
         run: node scripts/ios-prebuild.js -s -f ${{ matrix.flavor }}
+        env:
+          HERMES_VERSION: ${{ steps.hermes.outputs.VERSION }}
 
       - name: Build slice
         working-directory: node_modules/react-native
