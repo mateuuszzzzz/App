@@ -42,8 +42,8 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         id: getOldPatchesHash
         run: |
-            echo "HYBRID_APP_HASH=$(./scripts/compute-patches-hash.sh patches Mobile-Expensify/patches)" >> "$GITHUB_OUTPUT"
-            echo "STANDALONE_APP_HASH=$(./scripts/compute-patches-hash.sh patches)" >> "$GITHUB_OUTPUT"
+            echo "HYBRID_APP_HASH=$(./scripts/artifacts-utils/compute-patches-hash.sh patches Mobile-Expensify/patches)" >> "$GITHUB_OUTPUT"
+            echo "STANDALONE_APP_HASH=$(./scripts/artifacts-utils/compute-patches-hash.sh patches)" >> "$GITHUB_OUTPUT"
 
       - name: Get previous react-native version
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -60,8 +60,8 @@ jobs:
       - name: Get new patches hash
         id: getNewPatchesHash
         run: |
-            echo "HYBRID_APP_HASH=$(./scripts/compute-patches-hash.sh patches Mobile-Expensify/patches)" >> "$GITHUB_OUTPUT"
-            echo "STANDALONE_APP_HASH=$(./scripts/compute-patches-hash.sh patches)" >> "$GITHUB_OUTPUT"
+            echo "HYBRID_APP_HASH=$(./scripts/artifacts-utils/compute-patches-hash.sh patches Mobile-Expensify/patches)" >> "$GITHUB_OUTPUT"
+            echo "STANDALONE_APP_HASH=$(./scripts/artifacts-utils/compute-patches-hash.sh patches)" >> "$GITHUB_OUTPUT"
 
       - name: Get new react-native version
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -312,7 +312,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish to GitHub Packages Maven
-        run: ./android/gradlew -p gradleUtils/ios-artifacts-publish publish -PartifactsDir="/tmp/ios-artifacts" -PpatchedVersion="${PATCHED_VERSION}" -PpatchesHash="${PATCHES_HASH}" -PpackageName="${PACKAGE_NAME}"
+        run: ./android/gradlew -p scripts/artifacts-utils/ios/publish publish -PartifactsDir="/tmp/ios-artifacts" -PpatchedVersion="${PATCHED_VERSION}" -PpatchesHash="${PATCHES_HASH}" -PpackageName="${PACKAGE_NAME}"
         env:
           GH_PUBLISH_ACTOR: ${{ github.actor }}
           GH_PUBLISH_TOKEN: ${{ github.token }}
